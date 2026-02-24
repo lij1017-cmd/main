@@ -7,7 +7,6 @@ from data_prep import clean_data
 def generate():
     prices, code_to_name = clean_data('個股1.xlsx')
     best_params = (69, 23, 0.09)
-
     bt = Backtester(prices)
     eq, trades, holdings, action_log = bt.run(*best_params)
     cagr, mdd, calmar, win_rate = calculate_metrics(eq, trades)

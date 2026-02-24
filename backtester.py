@@ -76,18 +76,22 @@ class Backtester:
 
             if is_rebalance_day:
                 assets_to_buy = [a for a in new_portfolio_signals if a not in portfolio]
-                if assets_to_buy:
-                    buy_budget = min(capital / len(assets_to_buy), self.initial_capital / 3)
-                    for asset_idx in assets_to_buy:
-                        buy_price = next_prices[asset_idx]
-                        shares = buy_budget // buy_price
+                slot_capital = self.initial_capital / 3 # 10,000,000
+
+                for asset_idx in assets_to_buy:
+                    buy_price = next_prices[asset_idx]
+                    # Only buy if remaining capital is at least 10,000,000
+                    if capital >= slot_capital:
+                        shares = slot_capital // buy_price
                         if shares > 0:
-                            capital -= shares * buy_price
+                            actual_cost = shares * buy_price
+                            capital -= actual_cost
                             portfolio[asset_idx] = {
                                 'shares': shares, 'buy_price': buy_price,
                                 'buy_date': self.dates[i+1], 'max_price': buy_price,
                                 'momentum': roc[i][asset_idx]
                             }
+
                 for asset_idx in range(len(self.assets)):
                     if asset_idx in portfolio:
                         status = "買進新持有商品" if asset_idx in assets_to_buy else "保留與上一期相同之商品"
