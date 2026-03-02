@@ -106,7 +106,6 @@ write_basic_structure(ws_slt)
 ws_decide = workbook.add_worksheet('Decision')
 write_basic_structure(ws_decide)
 
-# New Helper Sheets for Performance
 ws_entry_row = workbook.add_worksheet('EntryRow')
 write_basic_structure(ws_entry_row)
 
@@ -127,32 +126,24 @@ for r in range(2, num_rows):
             ws_entry_row.write(r, c, 0)
             ws_trade_idx.write(r, c, "")
         else:
-            # Status
             status_formula = f'=IF(Decision!{col_letter}{excel_row-1}="BUY", "Holding", IF(Decision!{col_letter}{excel_row-1}="SELL", "Cash", Status!{col_letter}{excel_row-1}))'
             ws_status.write_formula(r, c, status_formula)
 
-            # Shares
             shares_formula = f'=IF(Decision!{col_letter}{excel_row-1}="BUY", 10000000/Prices!{col_letter}{excel_row}, IF(Decision!{col_letter}{excel_row-1}="SELL", 0, Shares!{col_letter}{excel_row-1}))'
             ws_shares.write_formula(r, c, shares_formula)
 
-            # MaxPrice
             maxp_formula = f'=IF(Status!{col_letter}{excel_row}="Holding", IF(Decision!{col_letter}{excel_row-1}="BUY", Prices!{col_letter}{excel_row}, MAX(Prices!{col_letter}{excel_row}, MaxPrice!{col_letter}{excel_row-1})), 0)'
             ws_maxp.write_formula(r, c, maxp_formula)
 
-            # SL Trigger
             slt_formula = f'=AND(Status!{col_letter}{excel_row}="Holding", Prices!{col_letter}{excel_row}<MaxPrice!{col_letter}{excel_row}*0.91)'
             ws_slt.write_formula(r, c, slt_formula)
 
-            # Decision
             decide_formula = f'=IF(Status!{col_letter}{excel_row}="Cash", IF(AND(RebalanceDay!$C{excel_row}, Rank!{col_letter}{excel_row}<>"", Rank!{col_letter}{excel_row}<=3), "BUY", ""), IF(OR(AND(RebalanceDay!$C{excel_row}, OR(Rank!{col_letter}{excel_row}="", Rank!{col_letter}{excel_row}>3)), SL_Trigger!{col_letter}{excel_row}), "SELL", "Hold"))'
             ws_decide.write_formula(r, c, decide_formula)
 
-            # EntryRow tracking
             entry_row_formula = f'=IF(Decision!{col_letter}{excel_row-1}="BUY", {excel_row}, IF(Status!{col_letter}{excel_row}="Holding", EntryRow!{col_letter}{excel_row-1}, 0))'
             ws_entry_row.write_formula(r, c, entry_row_formula)
 
-            # TradeIndex (for SELL events)
-            # Use 10000 as multiplier for row to keep uniqueness
             trade_idx_formula = f'=IF(Decision!{col_letter}{excel_row}="SELL", {excel_row}*10000+{c}, "")'
             ws_trade_idx.write_formula(r, c, trade_idx_formula)
 
@@ -165,17 +156,11 @@ ws_equity.write(0, 3, "總資產", header_format)
 ws_equity.write(0, 4, "最高資產", header_format)
 ws_equity.write(0, 5, "回撤", header_format)
 
-initial_cash = 30000000 # Assume 3 slots * 10M
+initial_cash = 30000000
 for r in range(2, num_rows):
     excel_row = r + 1
-    # Cash at T = Cash[T-1] + SUM(Proceeds from SELL at T) - SUM(Cost for BUY at T)
-    # Execution at T: SELL at Prices[T], BUY at Prices[T]
-    # Decision[T-1] determines action at T.
     if excel_row == start_data_row:
         ws_equity.write(r, 0, df_raw.iloc[r, 1], date_format)
-        # First day: start with initial cash minus any buys
-        # Sell proceeds: Decision[T-1]=="SELL" -> Shares[T-1]*Prices[T]
-        # Buy cost: Decision[T-1]=="BUY" -> 10,000,000
         cash_f = f"={initial_cash} + SUMPRODUCT((Decision!$C{excel_row-1}:${last_col_letter}{excel_row-1}=\"SELL\")*Shares!$C{excel_row-1}:${last_col_letter}{excel_row-1}*Prices!$C{excel_row}:${last_col_letter}{excel_row}) - SUMPRODUCT((Decision!$C{excel_row-1}:${last_col_letter}{excel_row-1}=\"BUY\")*10000000)"
         ws_equity.write_formula(r, 1, cash_f, num_format)
     elif excel_row > start_data_row:
@@ -186,12 +171,11 @@ for r in range(2, num_rows):
         ws_equity.write(r, 0, df_raw.iloc[r, 1], date_format)
         ws_equity.write(r, 1, initial_cash, num_format)
 
-    # Market Value = SUMPRODUCT(Shares[T], Prices[T])
     mv_f = f"=SUMPRODUCT(Shares!$C{excel_row}:${last_col_letter}{excel_row}*Prices!$C{excel_row}:${last_col_letter}{excel_row})"
     ws_equity.write_formula(r, 2, mv_f, num_format)
     ws_equity.write_formula(r, 3, f"=B{excel_row}+C{excel_row}", num_format)
 
-    if excel_row == 3: # First data row after headers (r=2)
+    if excel_row == 3:
         ws_equity.write_formula(r, 4, f"=D{excel_row}", num_format)
     else:
         ws_equity.write_formula(r, 4, f"=MAX(D$3:D{excel_row})", num_format)
@@ -204,40 +188,24 @@ perf_headers = ["進場日期", "出場日期", "進場價格", "出場價格", 
 for i, h in enumerate(perf_headers):
     ws_perf.write(0, i, h, header_format)
 
-# Max number of trades to extract - let's say 500
-for i in range(1, 501):
+# Max number of trades to extract - increased to 2000
+for i in range(1, 2001):
     excel_row = i + 1
-    # Find the i-th smallest trade index
-    # We use a helper sheet for TradeIndex, we need to search the whole grid.
-    # Actually, SMALL works on a range. TradeIndex!$C$3:$last_col$num_rows
     trade_idx_range = f"TradeIndex!$C$3:${last_col_letter}${num_rows}"
-    ws_perf.write_formula(i, 7, f"=IFERROR(SMALL({trade_idx_range}, {i}), \"\")") # Hidden col H for index
+    ws_perf.write_formula(i, 7, f"=IFERROR(SMALL({trade_idx_range}, {i}), \"\")")
 
     idx_cell = f"H{excel_row}"
-    # Row = INT(idx/10000), Col = MOD(idx, 10000)
-    # Exit Row
-    ws_perf.write_formula(i, 8, f"=IF({idx_cell}<>\"\", INT({idx_cell}/10000), \"\")") # Hidden col I
-    # Col
-    ws_perf.write_formula(i, 9, f"=IF({idx_cell}<>\"\", MOD({idx_cell}, 10000), \"\")") # Hidden col J
-    # Entry Row
-    # Need to look up EntryRow!Col!ExitRow
-    # Use INDIRECT and ADDRESS to get EntryRow[ExitRow, Col]
+    ws_perf.write_formula(i, 8, f"=IF({idx_cell}<>\"\", INT({idx_cell}/10000), \"\")")
+    ws_perf.write_formula(i, 9, f"=IF({idx_cell}<>\"\", MOD({idx_cell}, 10000), \"\")")
     entry_row_f = f'=IF(I{excel_row}<>"", INDEX(EntryRow!$A$1:${last_col_letter}${num_rows}, I{excel_row}, J{excel_row}+1), "")'
-    ws_perf.write_formula(i, 10, f"=IF({idx_cell}<>\"\", {entry_row_f}, \"\")") # Hidden col K
+    ws_perf.write_formula(i, 10, f"=IF({idx_cell}<>\"\", {entry_row_f}, \"\")")
 
-    # Entry Date
     ws_perf.write_formula(i, 0, f'=IF(K{excel_row}<>"", INDEX(Prices!$B$1:$B${num_rows}, K{excel_row}), "")', date_format)
-    # Exit Date
     ws_perf.write_formula(i, 1, f'=IF(I{excel_row}<>"", INDEX(Prices!$B$1:$B${num_rows}, I{excel_row}), "")', date_format)
-    # Entry Price
     ws_perf.write_formula(i, 2, f'=IF(K{excel_row}<>"", INDEX(Prices!$A$1:${last_col_letter}${num_rows}, K{excel_row}, J{excel_row}+1), "")', price_format)
-    # Exit Price
     ws_perf.write_formula(i, 3, f'=IF(I{excel_row}<>"", INDEX(Prices!$A$1:${last_col_letter}${num_rows}, I{excel_row}, J{excel_row}+1), "")', price_format)
-    # Holding Days
     ws_perf.write_formula(i, 4, f'=IF(B{excel_row}<>"", B{excel_row}-A{excel_row}, "")')
-    # Return %
     ws_perf.write_formula(i, 5, f'=IF(C{excel_row}<>"", (D{excel_row}-C{excel_row})/C{excel_row}, "")', pct_format)
-    # Accumulated Equity
     ws_perf.write_formula(i, 6, f'=IF(I{excel_row}<>"", INDEX(Equity!$D$1:$D${num_rows}, I{excel_row}), "")', num_format)
 
 # Summary Stats Sheet
@@ -256,7 +224,7 @@ for i, (label, formula) in enumerate(stats):
     else:
         ws_stats.write_formula(i, 1, formula)
 
-# Dashboard Sheet (Update to match v2 but maybe more)
+# Dashboard Sheet
 ws_dash = workbook.add_worksheet('Dashboard')
 ws_dash.write(0, 0, "當前建議 (基於最後一列數據)", header_format)
 ws_dash.write(1, 0, "日期", header_format)
@@ -278,6 +246,18 @@ for i, c in enumerate(stock_cols):
     ws_dash.write_formula(row_offset, 4, f"=Decision!{col_letter}{last_row_idx}")
     ws_dash.write_formula(row_offset, 5, f"=Shares!{col_letter}{last_row_idx}")
     ws_dash.write_formula(row_offset, 6, f"=ROC23!{col_letter}{last_row_idx}", pct_format)
+
+# Performance Summary on Dashboard
+perf_summary_col = 8
+ws_dash.write(0, perf_summary_col, "績效摘要", header_format)
+for i, (label, formula) in enumerate(stats):
+    ws_dash.write(i + 1, perf_summary_col, label, header_format)
+    # Reference the cells in the Stats sheet
+    stats_formula = f"='總績效統計'!B{i+1}"
+    if "%" in label or "率" in label or "回撤" in label:
+        ws_dash.write_formula(i + 1, perf_summary_col + 1, stats_formula, pct_format)
+    else:
+        ws_dash.write_formula(i + 1, perf_summary_col + 1, stats_formula)
 
 workbook.close()
 print("trendstrategy_formulas_equity25-2.xlsx generated.")
