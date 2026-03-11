@@ -12,7 +12,7 @@
 - **年化報酬率 (CAGR)**: 34.38%
 - **最大回撤 (MaxDD)**: -13.94%
 - **Calmar Ratio**: 2.47
-- **勝率 (Win Rate)**: 50.00%
+- **勝率 (Win Rate)**: 43.87%
 
 ## 參數高原表 (SMA 敏感度分析)
 |   SMA | CAGR   | MaxDD   |   Calmar |

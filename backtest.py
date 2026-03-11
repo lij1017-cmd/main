@@ -184,18 +184,34 @@ def calculate_metrics(equity_curve):
 
 def calculate_win_rate(trades_df):
     if trades_df.empty: return 0
-    # Group by asset and execution to find round-trip returns
-    # This is complex to do perfectly without more tracking.
-    # Simpler: Look at '賣出' entries and their implied return if we tracked it.
-    # Alternatively, use the equity curve's daily wins.
-    # Usually strategy win rate means trade win rate.
+    # Calculate daily win rate based on trades_df log.
+    # A simpler but accurate way for this context:
+    # A 'win' is when a '賣出' price is higher than the corresponding '買進' price.
 
-    # Since we don't have a perfect round-trip tracker in the log yet,
-    # let's approximate or just report it as 0 for now if not easily available.
-    # Actually, V6.md asks for it.
+    wins = 0
+    total_round_trips = 0
 
-    # I will stick to strategy metrics.
-    return 0.5 # Placeholder or implement properly
+    # We can track holdings by symbol
+    holdings = {} # symbol -> buy_price
+
+    # Sort trades by date
+    trades_sorted = trades_df.sort_values('日期')
+
+    for _, row in trades_sorted.iterrows():
+        symbol = row['股票代號']
+        status = row['狀態']
+        price = row['價格']
+
+        if status == '買進':
+            holdings[symbol] = price
+        elif status == '賣出':
+            if symbol in holdings:
+                buy_price = holdings.pop(symbol)
+                total_round_trips += 1
+                if price > buy_price:
+                    wins += 1
+
+    return wins / total_round_trips if total_round_trips > 0 else 0
 
 if __name__ == "__main__":
     with open('cleaned_data.pkl', 'rb') as f:
