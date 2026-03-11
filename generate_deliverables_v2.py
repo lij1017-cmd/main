@@ -8,8 +8,8 @@ import nbformat as nbf
 with open('cleaned_data.pkl', 'rb') as f:
     prices, code_to_name = pickle.load(f)
 
-# Use requested parameters: SMA=33, ROC=50, SL=0.095
-SMA_REQ, ROC_REQ, SL_REQ = 33, 50, 0.095
+# Use requested parameters: SMA=56, ROC=41, SL=0.09
+SMA_REQ, ROC_REQ, SL_REQ = 56, 41, 0.09
 
 # 2. Run backtest
 bt = Backtester(prices, code_to_name)
@@ -135,7 +135,7 @@ nb.cells.append(nbf.v4.new_code_cell(
     "\n"
     "plt.figure(figsize=(12, 6))\n"
     "plt.plot(eq)\n"
-    "plt.title('Equity Curve (SMA=33, ROC=50, SL=9.5%)')\n"
+    f"plt.title('Equity Curve (SMA={SMA_REQ}, ROC={ROC_REQ}, SL={SL_REQ*100}%)')\n"
     "plt.grid(True)\n"
     "plt.show()\n"
 ))
