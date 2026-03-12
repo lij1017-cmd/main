@@ -19,8 +19,8 @@ def clean_data(filepath):
     return prices, code_to_name
 
 # Parameters
-SMA_TARGET = 35
-ROC_TARGET = 53
+SMA_TARGET = 37
+ROC_TARGET = 55
 SL_TARGET = 0.09
 DATA_FILE = '個股1.xlsx'
 INITIAL_CAPITAL = 30000000
@@ -61,7 +61,11 @@ with pd.ExcelWriter(OUTPUT_EXCEL, engine='xlsxwriter') as writer:
     eq.reset_index().rename(columns={'index': '日期', 0: '權益'}).to_excel(writer, sheet_name='Equity_Curve', index=False)
     hold.to_excel(writer, sheet_name='Equity_Hold', index=False)
     trades['最佳參數'] = f"SMA={SMA_TARGET}, ROC={ROC_TARGET}, SL={SL_TARGET}"
-    trades = trades[['日期', '股票代號', '狀態', '價格', '股數', '動能值', '標的名稱', '最佳參數', '原因', '說明']]
+    # Ensure '報酬率' is in the trades log for the Excel output if it exists
+    cols = ['日期', '股票代號', '狀態', '價格', '股數', '動能值', '標的名稱', '最佳參數', '原因', '說明']
+    if '報酬率' in trades.columns:
+        cols.append('報酬率')
+    trades = trades[cols]
     trades.to_excel(writer, sheet_name='Trades', index=False)
 
 # 5. Generate Markdown Report
