@@ -8,8 +8,8 @@ import nbformat as nbf
 with open('cleaned_data.pkl', 'rb') as f:
     prices, code_to_name = pickle.load(f)
 
-# Use requested parameters: SMA=56, ROC=51, SL=0.095
-SMA_REQ, ROC_REQ, SL_REQ = 56, 51, 0.095
+# Use requested parameters: SMA=35, ROC=55, SL=0.09
+SMA_REQ, ROC_REQ, SL_REQ = 35, 55, 0.09
 
 # 2. Run backtest
 bt = Backtester(prices, code_to_name)
