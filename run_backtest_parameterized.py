@@ -15,11 +15,12 @@ def clean_data(filepath):
     prices.columns = stock_codes
     code_to_name = dict(zip(stock_codes, stock_names))
     prices = prices.ffill().bfill()
+    prices = prices.dropna(axis=1, how='all')
     return prices, code_to_name
 
 # Parameters
 SMA_TARGET = 35
-ROC_TARGET = 49
+ROC_TARGET = 53
 SL_TARGET = 0.09
 DATA_FILE = '個股1.xlsx'
 INITIAL_CAPITAL = 30000000
@@ -125,6 +126,7 @@ nb.cells.append(nbf.v4.new_code_cell(
     "    prices.columns = stock_codes\n"
     "    code_to_name = dict(zip(stock_codes, stock_names))\n"
     "    prices = prices.ffill().bfill()\n"
+    "    prices = prices.dropna(axis=1, how='all')\n"
     "    return prices, code_to_name\n"
 ))
 nb.cells.append(nbf.v4.new_code_cell(backtest_code))
