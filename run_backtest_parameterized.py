@@ -19,8 +19,8 @@ def clean_data(filepath):
     return prices, code_to_name
 
 # Parameters
-SMA_TARGET = 37
-ROC_TARGET = 55
+SMA_TARGET = 35
+ROC_TARGET = 49
 SL_TARGET = 0.09
 DATA_FILE = '個股1.xlsx'
 INITIAL_CAPITAL = 30000000
