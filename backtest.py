@@ -86,6 +86,10 @@ class Backtester:
                     proceeds = info['shares'] * sell_price * (1 - 0.001425 - 0.003)
                     cash += proceeds
 
+                    # Calculate return for win rate
+                    buy_cost = info['shares'] * info['buy_price'] * 1.001425
+                    trade_return = (proceeds / buy_cost) - 1 if buy_cost > 0 else 0
+
                     reason = "停損" if asset_idx in triggered_sl_idxs else "再平衡"
                     trades_log.append({
                         '日期': date, # Signal date
@@ -96,7 +100,8 @@ class Backtester:
                         '動能值': f"{roc[i][asset_idx]*100:.2f}%",
                         '標的名稱': self.code_to_name[self.assets[asset_idx]],
                         '原因': reason,
-                        '說明': f"{reason}賣出：{self.code_to_name[self.assets[asset_idx]]}"
+                        '說明': f"{reason}賣出：{self.code_to_name[self.assets[asset_idx]]}",
+                        '報酬率': trade_return
                     })
 
             # Execute buys at T+1 close
@@ -184,18 +189,12 @@ def calculate_metrics(equity_curve):
 
 def calculate_win_rate(trades_df):
     if trades_df.empty: return 0
-    # Group by asset and execution to find round-trip returns
-    # This is complex to do perfectly without more tracking.
-    # Simpler: Look at '賣出' entries and their implied return if we tracked it.
-    # Alternatively, use the equity curve's daily wins.
-    # Usually strategy win rate means trade win rate.
-
-    # Since we don't have a perfect round-trip tracker in the log yet,
-    # let's approximate or just report it as 0 for now if not easily available.
-    # Actually, V6.md asks for it.
-
-    # I will stick to strategy metrics.
-    return 0.5 # Placeholder or implement properly
+    if '報酬率' in trades_df.columns:
+        sell_trades = trades_df[trades_df['狀態'] == '賣出']
+        if sell_trades.empty: return 0
+        winning_trades = sell_trades[sell_trades['報酬率'] > 0]
+        return len(winning_trades) / len(sell_trades)
+    return 0.0
 
 if __name__ == "__main__":
     with open('cleaned_data.pkl', 'rb') as f:
