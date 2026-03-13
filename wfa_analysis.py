@@ -84,9 +84,9 @@ class Backtester:
                 if curr_p < info['max_price'] * (1 - stop_loss_pct):
                     triggered_sl_idxs.append(asset_idx)
 
-            # 3. Check for Rebalancing (every 10 days)
+            # 3. Check for Rebalancing (every 7 days)
             # Use relative index for rebalancing cycle
-            is_rebalance_day = (i - loop_start) % 10 == 0
+            is_rebalance_day = (i - loop_start) % 7 == 0
 
             top_3_signals = []
             if is_rebalance_day:
