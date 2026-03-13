@@ -185,7 +185,7 @@ def main():
         start_date = pd.to_datetime(start_str)
         end_date = pd.to_datetime(end_str)
 
-        eq, trades, costs = bt.run(64, 23, 0.09, start_date, end_date)
+        eq, trades, costs = bt.run(35, 56, 0.09, start_date, end_date)
         cagr, mdd, calmar = calculate_metrics(eq)
 
         results.append([
