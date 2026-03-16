@@ -23,7 +23,7 @@ class Backtester:
         self.code_to_name = code_to_name
         self.initial_capital = initial_capital
 
-    def run(self, sma_period, roc_period, stop_loss_pct, start_date, end_date, rebalance_interval=8):
+    def run(self, sma_period, roc_period, stop_loss_pct, start_date, end_date, rebalance_interval=7):
         # Filter dates
         mask = (self.dates >= start_date) & (self.dates <= end_date)
         period_dates = self.dates[mask]
@@ -185,7 +185,7 @@ def main():
         start_date = pd.to_datetime(start_str)
         end_date = pd.to_datetime(end_str)
 
-        eq, trades, costs = bt.run(27, 98, 0.075, start_date, end_date, rebalance_interval=8)
+        eq, trades, costs = bt.run(30, 52, 0.075, start_date, end_date, rebalance_interval=7)
         cagr, mdd, calmar = calculate_metrics(eq)
 
         results.append([

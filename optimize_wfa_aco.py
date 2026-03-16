@@ -26,7 +26,7 @@ class ACO_Optimizer_WFA:
         self.history = []
 
         # Fixed rebalance cycle for optimization
-        self.rebalance_cycle = 8
+        self.rebalance_cycle = 7
 
     def _select_param(self, range_vals, pheromones):
         probs = pheromones ** self.alpha
@@ -40,11 +40,7 @@ class ACO_Optimizer_WFA:
             # We use the full period for optimization
             # run_backtest_equity2025新.Backtester.run definition:
             # run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=6)
-            # Note: wfa_analysis.py had a different run signature.
-            # I must use the correct one for the current Backtester.
-            eq, trades, _ = bt.run(int(sma), int(roc), float(sl), rebalance_interval=8)
-            # Slice eq to start/end dates for scoring if needed,
-            # but usually we score on the whole cleaned range.
+            eq, trades, _ = bt.run(int(sma), int(roc), float(sl), rebalance_interval=7)
             mask = (eq.index >= start_date) & (eq.index <= end_date)
             return eq[mask], trades, None
 
