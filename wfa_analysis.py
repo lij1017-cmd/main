@@ -23,7 +23,7 @@ class Backtester:
         self.code_to_name = code_to_name
         self.initial_capital = initial_capital
 
-    def run(self, sma_period, roc_period, stop_loss_pct, start_date, end_date):
+    def run(self, sma_period, roc_period, stop_loss_pct, start_date, end_date, rebalance_interval=7):
         # Filter dates
         mask = (self.dates >= start_date) & (self.dates <= end_date)
         period_dates = self.dates[mask]
@@ -84,9 +84,9 @@ class Backtester:
                 if curr_p < info['max_price'] * (1 - stop_loss_pct):
                     triggered_sl_idxs.append(asset_idx)
 
-            # 3. Check for Rebalancing (every 6 days)
+            # 3. Check for Rebalancing
             # Use relative index for rebalancing cycle
-            is_rebalance_day = (i - loop_start) % 6 == 0
+            is_rebalance_day = (i - loop_start) % rebalance_interval == 0
 
             top_3_signals = []
             if is_rebalance_day:
@@ -185,7 +185,7 @@ def main():
         start_date = pd.to_datetime(start_str)
         end_date = pd.to_datetime(end_str)
 
-        eq, trades, costs = bt.run(87, 54, 0.09, start_date, end_date)
+        eq, trades, costs = bt.run(30, 52, 0.075, start_date, end_date, rebalance_interval=7)
         cagr, mdd, calmar = calculate_metrics(eq)
 
         results.append([

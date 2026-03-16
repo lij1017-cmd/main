@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import pickle
-from wfa_analysis import clean_data, Backtester, calculate_metrics
+from run_backtest_equity2025新_1 import clean_data, Backtester, calculate_metrics
 
 class ACO_Optimizer_WFA:
     def __init__(self, backtester, n_ants=10, n_iterations=10, rho=0.1, alpha=1):
@@ -26,7 +26,7 @@ class ACO_Optimizer_WFA:
         self.history = []
 
         # Fixed rebalance cycle for optimization
-        self.rebalance_cycle = 6
+        self.rebalance_cycle = 7
 
     def _select_param(self, range_vals, pheromones):
         probs = pheromones ** self.alpha
@@ -34,15 +34,15 @@ class ACO_Optimizer_WFA:
         return np.random.choice(range_vals, p=probs)
 
     def optimize(self, start_date, end_date):
-        # Patch the Backtester to use 6-day rebalance if it doesn't already or if we want to be sure
-        # In wfa_analysis.py, is_rebalance_day = (i - loop_start) % 6 == 0
-        # Since I will use the class from there, I need to make sure I use the one with % 6.
-        # I'll define a local run that uses the fixed cycle.
+        # Patch the Backtester to use 8-day rebalance
 
         def run_fixed(bt, sma, roc, sl):
             # We use the full period for optimization
-            eq, trades, costs = bt.run(int(sma), int(roc), float(sl), start_date, end_date)
-            return eq, trades, costs
+            # run_backtest_equity2025新_1.Backtester.run definition:
+            # run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=6)
+            eq, trades, _ = bt.run(int(sma), int(roc), float(sl), rebalance_interval=7)
+            mask = (eq.index >= start_date) & (eq.index <= end_date)
+            return eq[mask], trades, None
 
         for gen in range(self.n_iterations):
             gen_best_params = None
@@ -55,11 +55,11 @@ class ACO_Optimizer_WFA:
                 sl = self._select_param(self.sl_range, self.sl_pheromones)
 
                 eq, trades, costs = run_fixed(self.bt, sma, roc, sl)
-                cagr, mdd, calmar = calculate_metrics(eq)
+                cagr, mdd, calmar, _ = calculate_metrics(eq)
 
                 # Objective: Maximize Calmar Ratio
                 score = calmar
-                if mdd > -0.05 or trades < 10: # Penalty for unrealistic results
+                if mdd > -0.05 or len(trades) < 10: # Penalty for unrealistic results
                      score = -1
 
                 ants_results.append(((sma, roc, sl), score))
