@@ -92,7 +92,7 @@ class Backtester:
                         '股票代號': self.assets[asset_idx],
                         '狀態': '賣出',
                         '價格': sell_price, # Use execution price for audit consistency
-                        '股數': 0,
+                        '股數': info['shares'],
                         '動能值': f"{roc[i][asset_idx]*100:.2f}%",
                         '標的名稱': self.code_to_name[self.assets[asset_idx]],
                         '原因': reason,

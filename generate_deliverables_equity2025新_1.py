@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import nbformat as nbf
-from run_backtest_equity2025新 import Backtester, clean_data, calculate_metrics, calculate_win_rate
+from run_backtest_equity2025新_1 import Backtester, clean_data, calculate_metrics, calculate_win_rate
 
 # 1. Params
 DATA_FILE = '個股合-1.xlsx'
@@ -29,7 +29,7 @@ for s in [SMA_BEST-4, SMA_BEST-2, SMA_BEST, SMA_BEST+2, SMA_BEST+4]:
 plateau_df = pd.DataFrame(plateau_data)
 
 # 4. Excel
-OUTPUT_EXCEL = 'trendstrategy_results_equity2025新.xlsx'
+OUTPUT_EXCEL = 'trendstrategy_results_equity2025新-1.xlsx'
 with pd.ExcelWriter(OUTPUT_EXCEL, engine='xlsxwriter') as writer:
     summary_df = pd.DataFrame([
         {'項目': '年化報酬率 (CAGR)', '數值': f"{cagr:.2%}"},
@@ -52,8 +52,8 @@ with pd.ExcelWriter(OUTPUT_EXCEL, engine='xlsxwriter') as writer:
     trades.to_excel(writer, sheet_name='Trades', index=False)
 
 # 5. MD
-OUTPUT_MD = 'reproduce_report_equity2025新.md'
-md_content = f"""# Asset Class Trend Following 策略回測報告 (equity2025新)
+OUTPUT_MD = 'reproduce_report_equity2025新-1.md'
+md_content = f"""# Asset Class Trend Following 策略回測報告 (equity2025新-1)
 
 ## 策略摘要
 本策略使用「個股合-1.xlsx」進行 2019-2025 全週期回測。採用 6 日再平衡機制，結合 SMA 與 ROC 進行選股，並落實 9.0% 追蹤停損。
@@ -84,12 +84,12 @@ with open(OUTPUT_MD, 'w', encoding='utf-8') as f:
 
 # 6. Notebook
 nb = nbf.v4.new_notebook()
-with open('run_backtest_equity2025新.py', 'r') as f:
+with open('run_backtest_equity2025新_1.py', 'r') as f:
     backtest_code = f.read()
     if 'if __name__ == "__main__":' in backtest_code:
         backtest_code = backtest_code[:backtest_code.find('if __name__ == "__main__":')]
 
-nb.cells.append(nbf.v4.new_markdown_cell("# Asset Class Trend Following 策略回測 (equity2025新)"))
+nb.cells.append(nbf.v4.new_markdown_cell("# Asset Class Trend Following 策略回測 (equity2025新-1)"))
 nb.cells.append(nbf.v4.new_code_cell(
     f"SMA_PERIOD = {SMA_BEST}\n"
     f"ROC_PERIOD = {ROC_BEST}\n"
@@ -112,7 +112,7 @@ nb.cells.append(nbf.v4.new_code_cell(
     "plt.show()"
 ))
 
-with open('trendstrategy_equity2025新.ipynb', 'w', encoding='utf-8') as f:
+with open('trendstrategy_equity2025新-1.ipynb', 'w', encoding='utf-8') as f:
     nbf.write(nb, f)
 
 print("All deliverables generated.")

@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from tabulate import tabulate
-from run_backtest_equity2025新 import Backtester, clean_data, calculate_metrics
+from run_backtest_equity2025新_1 import Backtester, clean_data, calculate_metrics
 
 def main():
     data_file = '個股合-1.xlsx'

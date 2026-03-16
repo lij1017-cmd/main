@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import pickle
-from run_backtest_equity2025新 import clean_data, Backtester, calculate_metrics
+from run_backtest_equity2025新_1 import clean_data, Backtester, calculate_metrics
 
 class ACO_Optimizer_WFA:
     def __init__(self, backtester, n_ants=10, n_iterations=10, rho=0.1, alpha=1):
@@ -38,7 +38,7 @@ class ACO_Optimizer_WFA:
 
         def run_fixed(bt, sma, roc, sl):
             # We use the full period for optimization
-            # run_backtest_equity2025新.Backtester.run definition:
+            # run_backtest_equity2025新_1.Backtester.run definition:
             # run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=6)
             eq, trades, _ = bt.run(int(sma), int(roc), float(sl), rebalance_interval=7)
             mask = (eq.index >= start_date) & (eq.index <= end_date)

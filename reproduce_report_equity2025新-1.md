@@ -1,4 +1,4 @@
-# Asset Class Trend Following 策略回測報告 (equity2025新)
+# Asset Class Trend Following 策略回測報告 (equity2025新-1)
 
 ## 策略摘要
 本策略使用「個股合-1.xlsx」進行 2019-2025 全週期回測。採用 6 日再平衡機制，結合 SMA 與 ROC 進行選股，並落實 9.0% 追蹤停損。
