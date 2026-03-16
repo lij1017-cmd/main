@@ -91,7 +91,7 @@ class Backtester:
                         '日期': date,
                         '股票代號': self.assets[asset_idx],
                         '狀態': '賣出',
-                        '價格': current_prices[asset_idx],
+                        '價格': sell_price, # Use execution price for audit consistency
                         '股數': 0,
                         '動能值': f"{roc[i][asset_idx]*100:.2f}%",
                         '標的名稱': self.code_to_name[self.assets[asset_idx]],
@@ -125,7 +125,7 @@ class Backtester:
                                 '日期': date,
                                 '股票代號': self.assets[asset_idx],
                                 '狀態': '買進',
-                                '價格': current_prices[asset_idx],
+                                '價格': buy_price_exec, # Use execution price for audit consistency
                                 '股數': shares,
                                 '動能值': f"{roc[i][asset_idx]*100:.2f}%",
                                 '標的名稱': self.code_to_name[self.assets[asset_idx]],
