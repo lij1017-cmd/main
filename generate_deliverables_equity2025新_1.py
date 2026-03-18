@@ -18,6 +18,8 @@ bt = Backtester(prices, code_to_name, INITIAL_CAPITAL)
 eq, trades, hold = bt.run(SMA_BEST, ROC_BEST, SL_BEST, REBALANCE)
 cagr, mdd, calmar, ret = calculate_metrics(eq)
 win_rate = calculate_win_rate(trades)
+total_costs = trades['買入手續費'].sum() + trades['賣出手續費'].sum() + trades['賣出交易稅'].sum()
+trade_count = len(trades[trades['狀態'].isin(['買進', '賣出'])])
 
 # 3. Plateau
 plateau_data = []
@@ -35,6 +37,8 @@ with pd.ExcelWriter(OUTPUT_EXCEL, engine='xlsxwriter') as writer:
         {'項目': '年化報酬率 (CAGR)', '數值': f"{cagr:.2%}"},
         {'項目': '最大回撤 (MaxDD)', '數值': f"{mdd:.2%}"},
         {'項目': 'Calmar Ratio', '數值': f"{calmar:.2f}"},
+        {'項目': '總交易筆數', '數值': trade_count},
+        {'項目': '總交易成本', '數值': f"{int(total_costs):,}"},
         {'項目': '總報酬率', '數值': f"{ret:.2%}"},
         {'項目': '最佳 SMA', '數值': SMA_BEST},
         {'項目': '最佳 ROC', '數值': ROC_BEST},
@@ -68,6 +72,8 @@ md_content = f"""# Asset Class Trend Following 策略回測報告 (equity2025新
 - **年化報酬率 (CAGR)**: {cagr:.2%}
 - **最大回撤 (MaxDD)**: {mdd:.2%}
 - **Calmar Ratio**: {calmar:.2f}
+- **交易筆數**: {trade_count}
+- **交易成本總計**: {int(total_costs):,} TWD
 
 ## 參數高原表 (SMA 敏感度)
 {plateau_df.to_markdown(index=False)}
