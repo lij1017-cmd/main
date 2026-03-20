@@ -43,7 +43,7 @@ class Backtester:
         start_buffer = max(sma_period, roc_period)
         loop_start = max(first_idx, start_buffer)
 
-        # 3. 帳戶初始化 (完全比照 run_backtest_equity2025新_3.py)
+        # 3. 帳戶初始化
         cash = float(self.initial_capital)
         portfolio = {} # {asset_idx: {shares, max_price}}
         equity_curve_list = []
@@ -149,14 +149,17 @@ def main():
     REBALANCE = 6
     INITIAL_CAPITAL = 30000000
 
+    # 調整後的 9 個 3 年期 WFA 區間
     periods = [
-        ('2019-01-02', '2022-12-31'),
-        ('2019-06-01', '2023-05-31'),
-        ('2020-01-02', '2023-12-31'),
-        ('2020-06-01', '2024-05-31'),
-        ('2021-01-02', '2024-12-31'),
-        ('2021-06-01', '2025-05-31'),
-        ('2022-01-02', '2025-12-31'),
+        ('2019-01-02', '2021-12-31'),
+        ('2019-06-01', '2022-05-31'),
+        ('2020-01-02', '2022-12-31'),
+        ('2020-06-01', '2023-05-31'),
+        ('2021-01-02', '2023-12-31'),
+        ('2021-06-01', '2024-05-31'),
+        ('2022-01-02', '2024-12-31'),
+        ('2022-06-01', '2025-05-31'),
+        ('2023-01-02', '2025-12-31'),
     ]
 
     prices, code_to_name = clean_data(DATA_FILE)
@@ -184,7 +187,7 @@ def main():
         all_equity_curves.append(temp_eq)
 
     summary_df = pd.DataFrame(summary_results)
-    OUTPUT_FILE = 'walk-forward-1.xlsx'
+    OUTPUT_FILE = 'walk-forward-2.xlsx'
     writer = pd.ExcelWriter(OUTPUT_FILE, engine='xlsxwriter')
 
     summary_df.to_excel(writer, sheet_name='Summary', index=False)
@@ -217,7 +220,7 @@ def main():
         curves_sheet.insert_chart(row_pos, 2 * len(periods) + 2, chart)
 
     writer.close()
-    print(f"已產出獨立 WFA 報表 (修正版): {OUTPUT_FILE}")
+    print(f"已成功產出獨立 WFA 報表 (-2): {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     main()
