@@ -85,7 +85,7 @@ class Backtester:
                     triggered_sl_idxs.append(a_idx)
 
             # B. 再平衡判斷
-            is_rebalance_day = (i - start_buffer) % rebalance_interval == 0
+            is_rebalance_day = (i - loop_start) % rebalance_interval == 0
             top_3_signals = []
             if is_rebalance_day:
                 sorted_indices = np.argsort(roc[i])[::-1]
