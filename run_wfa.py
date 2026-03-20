@@ -45,11 +45,10 @@ class Backtester:
 
         # 3. 帳戶初始化
         cash = float(self.initial_capital)
-        portfolio = {} # {asset_idx: {shares, max_price}}
+        portfolio = {}
         equity_curve_list = []
         trade_count = 0
 
-        # 補足交易開始前的權益
         for i in range(first_idx, loop_start):
             equity_curve_list.append({
                 '日期': self.dates[i],
@@ -60,7 +59,6 @@ class Backtester:
             date = self.dates[i]
             current_prices = self.prices[i]
 
-            # 計算今日權益
             total_equity = cash
             for a_idx, info in portfolio.items():
                 total_equity += info['shares'] * current_prices[a_idx]
@@ -75,7 +73,7 @@ class Backtester:
 
             next_prices = self.prices[i+1]
 
-            # A. 停損判斷
+            # A. 停損
             triggered_sl_idxs = []
             for a_idx, info in portfolio.items():
                 curr_p = current_prices[a_idx]
@@ -84,7 +82,7 @@ class Backtester:
                 if curr_p < info['max_price'] * (1 - stop_loss_pct):
                     triggered_sl_idxs.append(a_idx)
 
-            # B. 再平衡判斷
+            # B. 再平衡 (以區間起始點為錨點)
             is_rebalance_day = (i - loop_start) % rebalance_interval == 0
             top_3_signals = []
             if is_rebalance_day:
@@ -134,7 +132,6 @@ def calculate_metrics(eq_df):
     days = (eq_df['日期'].iloc[-1] - eq_df['日期'].iloc[0]).days
     years = days / 365.25
     cagr = (1 + total_return) ** (1 / years) - 1 if years > 0 else 0
-
     rolling_max = equity.cummax()
     drawdowns = (equity - rolling_max) / rolling_max
     max_dd = drawdowns.min()
@@ -149,17 +146,17 @@ def main():
     REBALANCE = 6
     INITIAL_CAPITAL = 30000000
 
-    # 調整後的 9 個 3 年期 WFA 區間
+    # 最新要求的 WFA 區間
     periods = [
-        ('2019-01-02', '2021-12-31'),
-        ('2019-06-01', '2022-05-31'),
+        ('2024-06-01', '2025-12-31'),
+        ('2024-01-02', '2025-05-31'),
+        ('2023-01-02', '2024-12-31'),
+        ('2022-01-02', '2024-05-31'),
+        ('2021-06-01', '2023-12-31'),
+        ('2021-01-02', '2023-05-31'),
         ('2020-01-02', '2022-12-31'),
-        ('2020-06-01', '2023-05-31'),
-        ('2021-01-02', '2023-12-31'),
-        ('2021-06-01', '2024-05-31'),
-        ('2022-01-02', '2024-12-31'),
-        ('2022-06-01', '2025-05-31'),
-        ('2023-01-02', '2025-12-31'),
+        ('2019-06-01', '2022-05-31'),
+        ('2019-01-02', '2021-12-31'),
     ]
 
     prices, code_to_name = clean_data(DATA_FILE)
@@ -169,7 +166,7 @@ def main():
     all_equity_curves = []
 
     for start_str, end_str in periods:
-        print(f"正在執行獨立回測: {start_str} 至 {end_str}")
+        print(f"Executing WFA: {start_str} to {end_str}")
         eq_df, trades = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, start_str, end_str)
         cagr, mdd, calmar = calculate_metrics(eq_df)
 
@@ -187,9 +184,8 @@ def main():
         all_equity_curves.append(temp_eq)
 
     summary_df = pd.DataFrame(summary_results)
-    OUTPUT_FILE = 'walk-forward-2.xlsx'
+    OUTPUT_FILE = 'walk-forward.xlsx'
     writer = pd.ExcelWriter(OUTPUT_FILE, engine='xlsxwriter')
-
     summary_df.to_excel(writer, sheet_name='Summary', index=False)
     workbook = writer.book
     summary_sheet = writer.sheets['Summary']
@@ -220,7 +216,7 @@ def main():
         curves_sheet.insert_chart(row_pos, 2 * len(periods) + 2, chart)
 
     writer.close()
-    print(f"已成功產出獨立 WFA 報表 (-2): {OUTPUT_FILE}")
+    print(f"WFA Done: {OUTPUT_FILE}")
 
 if __name__ == "__main__":
     main()
