@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
-from run_backtest_equity2025新_3 import Backtester, clean_data, calculate_metrics
+from run_wfa import Backtester, clean_data, calculate_metrics
 
 class ACO_Optimizer_2022_2025:
-    def __init__(self, prices, code_to_name, n_ants=15, n_iterations=12, rho=0.1, alpha=1):
+    def __init__(self, prices, code_to_name, n_ants=50, n_iterations=30, rho=0.1, alpha=1):
         self.prices = prices
         self.code_to_name = code_to_name
         self.n_ants = n_ants
@@ -20,6 +20,11 @@ class ACO_Optimizer_2022_2025:
         self.sma_pheromones = np.ones(len(self.sma_range))
         self.roc_pheromones = np.ones(len(self.roc_range))
         self.sl_pheromones = np.ones(len(self.sl_range))
+
+        # 初始偏好 21, 37, 0.095 (之前找到過 > 2 的一組)
+        # self.sma_pheromones[np.where(self.sma_range == 21)[0][0]] = 2.0
+        # self.roc_pheromones[np.where(self.roc_range == 37)[0][0]] = 2.0
+        # self.sl_pheromones[np.where(self.sl_range == 0.095)[0][0]] = 2.0
 
         self.best_params = None
         self.best_score = -np.inf
@@ -40,16 +45,18 @@ class ACO_Optimizer_2022_2025:
                 sl = self._select_param(self.sl_range, self.sl_pheromones)
 
                 # 使用 6 天再平衡，依照 2022-2025 期間的最佳化需求
-                eq, trades, _ = bt.run(int(sma), int(roc), float(sl), 6)
-                mask = (eq.index >= pd.to_datetime(start_date)) & (eq.index <= pd.to_datetime(end_date))
+                eq, trades = bt.run(int(sma), int(roc), float(sl), 6, start_date, end_date)
+                mask = (eq['日期'] >= pd.to_datetime(start_date)) & (eq['日期'] <= pd.to_datetime(end_date))
                 eq_period = eq[mask]
 
                 if eq_period.empty or len(eq_period) < 2:
                     score = -1
                 else:
-                    cagr, mdd, calmar, _ = calculate_metrics(eq_period)
+                    cagr, mdd, calmar = calculate_metrics(eq_period)
                     # 目標：最大化 Calmar Ratio，同時給予一定的 MDD 罰則避免極端
-                    score = calmar if mdd < -0.05 and len(trades) > 20 else -1
+                    # 給予 Calmar > 2 的極高權重
+                    score = calmar if mdd < -0.05 and trades > 20 else -1
+                    if calmar > 2: score *= 2
 
                 ants_results.append(((sma, roc, sl), score))
 
@@ -84,9 +91,8 @@ if __name__ == "__main__":
 
     # 計算最佳參數下的最終指標
     bt = Backtester(prices, code_to_name)
-    eq, trades, _ = bt.run(int(best_p[0]), int(best_p[1]), float(best_p[2]), 6)
-    mask = (eq.index >= pd.to_datetime(start_date)) & (eq.index <= pd.to_datetime(end_date))
-    cagr, mdd, calmar, _ = calculate_metrics(eq[mask])
+    eq, trades = bt.run(int(best_p[0]), int(best_p[1]), float(best_p[2]), 6, start_date, end_date)
+    cagr, mdd, calmar = calculate_metrics(eq)
 
     print("\n=== 最佳化結果 (2022-2025) ===")
     print(f"SMA: {best_p[0]}")
@@ -95,4 +101,4 @@ if __name__ == "__main__":
     print(f"CAGR: {cagr:.2%}")
     print(f"MaxDD: {mdd:.2%}")
     print(f"Calmar Ratio: {calmar:.2f}")
-    print(f"交易次數: {len(trades[trades['訊號日期'] >= pd.to_datetime(start_date)])}")
+    print(f"交易次數: {trades}")
