@@ -1,0 +1,34 @@
+import pandas as pd
+import numpy as np
+from run_wfa import Backtester, clean_data, calculate_metrics
+
+def main():
+    # 參數設定
+    SMA_PERIOD = 87
+    ROC_PERIOD = 54
+    STOP_LOSS_PCT = 0.08 # 調整為 8%
+    REBALANCE = 6
+    INITIAL_CAPITAL = 30000000
+    DATA_FILE = '個股合-1.xlsx'
+
+    prices, code_to_name = clean_data(DATA_FILE)
+    bt = Backtester(prices, code_to_name, INITIAL_CAPITAL)
+
+    # 全期間
+    start_date = '2019-01-02'
+    end_date = '2025-12-31'
+
+    print(f"正在執行測試: SMA={SMA_PERIOD}, ROC={ROC_PERIOD}, SL={STOP_LOSS_PCT*100:.0f}%")
+
+    eq_df, trades = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, start_date, end_date)
+    cagr, mdd, calmar = calculate_metrics(eq_df)
+
+    print("\n=== 測試結果 (2019-2025) ===")
+    print(f"年化報酬率 (CAGR): {cagr:.2%}")
+    print(f"最大回撤 (MaxDD): {mdd:.2%}")
+    print(f"卡瑪比率 (Calmar Ratio): {calmar:.2f}")
+    print(f"總交易次數: {trades}")
+    print(f"期末淨值: {eq_df['權益'].iloc[-1]:,.0f}")
+
+if __name__ == "__main__":
+    main()
