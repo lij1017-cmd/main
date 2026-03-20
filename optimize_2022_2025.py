@@ -3,7 +3,7 @@ import numpy as np
 from run_wfa import Backtester, clean_data, calculate_metrics
 
 class ACO_Optimizer_2022_2025:
-    def __init__(self, prices, code_to_name, n_ants=50, n_iterations=30, rho=0.1, alpha=1):
+    def __init__(self, prices, code_to_name, n_ants=60, n_iterations=35, rho=0.1, alpha=1):
         self.prices = prices
         self.code_to_name = code_to_name
         self.n_ants = n_ants
@@ -11,20 +11,15 @@ class ACO_Optimizer_2022_2025:
         self.rho = rho
         self.alpha = alpha
 
-        # 搜尋空間 (受限版：SMA <= 90, ROC <= 90, SL <= 10%)
-        self.sma_range = np.arange(10, 91, 1)
-        self.roc_range = np.arange(10, 91, 1)
+        # 搜尋空間 (受限版：SMA 30-100, ROC 40-100, SL <= 10%)
+        self.sma_range = np.arange(30, 101, 1)
+        self.roc_range = np.arange(40, 101, 1)
         self.sl_range = np.arange(0.05, 0.101, 0.005)
 
         # 初始化信息素
         self.sma_pheromones = np.ones(len(self.sma_range))
         self.roc_pheromones = np.ones(len(self.roc_range))
         self.sl_pheromones = np.ones(len(self.sl_range))
-
-        # 初始偏好 21, 37, 0.095 (之前找到過 > 2 的一組)
-        # self.sma_pheromones[np.where(self.sma_range == 21)[0][0]] = 2.0
-        # self.roc_pheromones[np.where(self.roc_range == 37)[0][0]] = 2.0
-        # self.sl_pheromones[np.where(self.sl_range == 0.095)[0][0]] = 2.0
 
         self.best_params = None
         self.best_score = -np.inf
