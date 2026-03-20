@@ -11,10 +11,10 @@ class ACO_Optimizer_2022_2025:
         self.rho = rho
         self.alpha = alpha
 
-        # 搜尋空間
-        self.sma_range = np.arange(10, 151, 1)
-        self.roc_range = np.arange(10, 151, 1)
-        self.sl_range = np.arange(0.05, 0.201, 0.005)
+        # 搜尋空間 (受限版：SMA <= 90, ROC <= 90, SL <= 10%)
+        self.sma_range = np.arange(10, 91, 1)
+        self.roc_range = np.arange(10, 91, 1)
+        self.sl_range = np.arange(0.05, 0.101, 0.005)
 
         # 初始化信息素
         self.sma_pheromones = np.ones(len(self.sma_range))
