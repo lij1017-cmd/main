@@ -184,7 +184,7 @@ def main():
         all_equity_curves.append(temp_eq)
 
     summary_df = pd.DataFrame(summary_results)
-    OUTPUT_FILE = 'walk-forward.xlsx'
+    OUTPUT_FILE = 'walk-forward-3.xlsx'
     writer = pd.ExcelWriter(OUTPUT_FILE, engine='xlsxwriter')
     summary_df.to_excel(writer, sheet_name='Summary', index=False)
     workbook = writer.book
