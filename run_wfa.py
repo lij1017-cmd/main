@@ -140,10 +140,11 @@ def calculate_metrics(eq_df):
 
 def main():
     DATA_FILE = '個股合-1.xlsx'
-    SMA_PERIOD = 87
-    ROC_PERIOD = 54
+    # 採用最新最佳化參數 (2020-2024 期間優化結果)
+    SMA_PERIOD = 54
+    ROC_PERIOD = 52
     STOP_LOSS_PCT = 0.09
-    REBALANCE = 6
+    REBALANCE = 9
     INITIAL_CAPITAL = 30000000
 
     # 最新要求的 WFA 區間
