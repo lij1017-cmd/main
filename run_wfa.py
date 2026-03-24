@@ -17,113 +17,7 @@ def clean_data(filepath):
     prices = prices.ffill().bfill()
     return prices, code_to_name
 
-class Backtester:
-    def __init__(self, prices, code_to_name, initial_capital=30000000):
-        self.prices_df = prices
-        self.prices = prices.values
-        self.dates = prices.index
-        self.assets = prices.columns
-        self.code_to_name = code_to_name
-        self.initial_capital = initial_capital
-
-    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval, start_date, end_date):
-        # 1. 指標預計算
-        sma = self.prices_df.rolling(window=sma_period).mean().values
-        roc = self.prices_df.pct_change(periods=roc_period).values
-
-        # 2. 確定區間索引
-        mask = (self.dates >= pd.to_datetime(start_date)) & (self.dates <= pd.to_datetime(end_date))
-        all_indices = np.where(mask)[0]
-        if len(all_indices) == 0:
-            return None, 0
-
-        first_idx = all_indices[0]
-        last_idx = all_indices[-1]
-
-        start_buffer = max(sma_period, roc_period)
-        loop_start = max(first_idx, start_buffer)
-
-        # 3. 帳戶初始化
-        cash = float(self.initial_capital)
-        portfolio = {}
-        equity_curve_list = []
-        trade_count = 0
-
-        for i in range(first_idx, loop_start):
-            equity_curve_list.append({
-                '日期': self.dates[i],
-                '權益': float(self.initial_capital)
-            })
-
-        for i in range(loop_start, last_idx + 1):
-            date = self.dates[i]
-            current_prices = self.prices[i]
-
-            total_equity = cash
-            for a_idx, info in portfolio.items():
-                total_equity += info['shares'] * current_prices[a_idx]
-
-            equity_curve_list.append({
-                '日期': date,
-                '權益': total_equity
-            })
-
-            if i == last_idx:
-                break
-
-            next_prices = self.prices[i+1]
-
-            # A. 停損
-            triggered_sl_idxs = []
-            for a_idx, info in portfolio.items():
-                curr_p = current_prices[a_idx]
-                if curr_p > info['max_price']:
-                    info['max_price'] = curr_p
-                if curr_p < info['max_price'] * (1 - stop_loss_pct):
-                    triggered_sl_idxs.append(a_idx)
-
-            # B. 再平衡 (以區間起始點為錨點)
-            is_rebalance_day = (i - loop_start) % rebalance_interval == 0
-            top_3_signals = []
-            if is_rebalance_day:
-                sorted_indices = np.argsort(roc[i])[::-1]
-                for idx in sorted_indices:
-                    if len(top_3_signals) >= 3: break
-                    if current_prices[idx] > sma[i][idx] and roc[i][idx] > 0:
-                        top_3_signals.append(idx)
-
-            # C. 賣出
-            assets_to_sell = set(triggered_sl_idxs)
-            if is_rebalance_day:
-                for a_idx in portfolio.keys():
-                    if a_idx not in top_3_signals:
-                        assets_to_sell.add(a_idx)
-
-            for a_idx in list(assets_to_sell):
-                if a_idx in portfolio:
-                    info = portfolio.pop(a_idx)
-                    sell_price = next_prices[a_idx]
-                    shares = info['shares']
-                    sell_fee = shares * sell_price * 0.001425
-                    sell_tax = shares * sell_price * 0.003
-                    cash += (shares * sell_price - sell_fee - sell_tax)
-                    trade_count += 1
-
-            # D. 買進
-            if is_rebalance_day:
-                slot_cap = self.initial_capital / 3
-                for a_idx in top_3_signals:
-                    if a_idx in portfolio or len(portfolio) >= 3: continue
-                    buy_price_exec = next_prices[a_idx]
-                    shares = (int(slot_cap // (buy_price_exec * 1.001425)) // 1000) * 1000
-                    if shares > 0:
-                        cost = shares * buy_price_exec * 1.001425
-                        if cash >= cost:
-                            cash -= cost
-                            portfolio[a_idx] = {'shares': shares, 'max_price': buy_price_exec}
-                            trade_count += 1
-
-        return pd.DataFrame(equity_curve_list), trade_count
+from backtest_engine import Backtester, calculate_metrics
 
 def calculate_metrics(eq_df):
     if eq_df is None or eq_df.empty: return 0, 0, 0
@@ -168,8 +62,9 @@ def main():
 
     for start_str, end_str in periods:
         print(f"Executing WFA: {start_str} to {end_str}")
-        eq_df, trades = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, start_str, end_str)
+        eq_df, t_log, h_log, t2_log, d_log = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, start_str, end_str)
         cagr, mdd, calmar = calculate_metrics(eq_df)
+        trades = len(t_log)
 
         period_label = f"{start_str} - {end_str}"
         summary_results.append({
@@ -180,7 +75,7 @@ def main():
             '交易次數': trades
         })
 
-        temp_eq = eq_df.copy()
+        temp_eq = eq_df[['日期', '權益']].copy()
         temp_eq.columns = [f'日期_{period_label}', f'權益_{period_label}']
         all_equity_curves.append(temp_eq)
 

@@ -21,8 +21,9 @@ def main():
 
     print(f"正在產出驗證報表: SMA={SMA_PERIOD}, ROC={ROC_PERIOD}, SL={STOP_LOSS_PCT*100:.1f}%, Reb={REBALANCE}")
 
-    eq_df, trades = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, start_date, end_date)
+    eq_df, t_log, h_log, t2_log, d_log = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, start_date, end_date)
     cagr, mdd, calmar = calculate_metrics(eq_df)
+    trades = len(t_log)
 
     # 產出 Excel
     OUTPUT_FILE = 'walk-forward-test.xlsx'
