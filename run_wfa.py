@@ -64,7 +64,8 @@ def main():
         print(f"Executing WFA: {start_str} to {end_str}")
         eq_df, t_log, h_log, t2_log, d_log = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, start_str, end_str)
         cagr, mdd, calmar = calculate_metrics(eq_df)
-        trades = len(t_log)
+        # 僅計算實際的 '買進' 與 '賣出'，排除 '保持'
+        trades = len(t_log[t_log['狀態'].isin(['買進', '賣出'])])
 
         period_label = f"{start_str} - {end_str}"
         summary_results.append({
