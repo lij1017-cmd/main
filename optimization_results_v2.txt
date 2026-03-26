@@ -1,0 +1,16 @@
+Iter 0: New Best (89, 46, 0.0777119113515872, 9) Score -318.14
+Iter 0: New Best (79, 66, 0.07760122849849864, 9) Score -141.54
+Iter 1: New Best (41, 77, 0.07553413271181358, 9) Score -117.94
+Final Best Params: (41, 77, 0.07553413271181358, 9)
+
+Final Performance Audit:
+Window 1 (2019-01-02 to 2021-12-31): CAGR=34.99%, MDD=-18.83%, Calmar=1.86
+Window 2 (2019-06-01 to 2022-05-31): CAGR=33.65%, MDD=-18.83%, Calmar=1.79
+Window 3 (2020-01-02 to 2022-12-31): CAGR=28.66%, MDD=-29.89%, Calmar=0.96
+Window 4 (2020-06-01 to 2023-05-31): CAGR=35.35%, MDD=-24.55%, Calmar=1.44
+Window 5 (2021-01-02 to 2023-12-31): CAGR=24.06%, MDD=-17.29%, Calmar=1.39
+Window 6 (2021-06-01 to 2024-05-31): CAGR=51.54%, MDD=-30.06%, Calmar=1.71
+Window 7 (2022-01-02 to 2024-12-31): CAGR=30.94%, MDD=-26.68%, Calmar=1.16
+Window 8 (2022-06-01 to 2025-05-31): CAGR=38.20%, MDD=-25.16%, Calmar=1.52
+Window 9 (2023-01-02 to 2025-12-31): CAGR=47.11%, MDD=-18.04%, Calmar=2.61
+Full Period (2019-01-02 to 2025-12-31): CAGR=24.76%, MDD=-18.83%, Calmar=1.31
