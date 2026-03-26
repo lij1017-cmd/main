@@ -1,0 +1,10 @@
+Searching 972 sets...
+Best: (30, 45, 0.03, 6) Score:-100.77 MinMDD:-76.54% FullCal:0.55 MinSub:-0.44
+Best: (30, 30, 0.03, 6) Score:-100.47 MinMDD:-47.37% FullCal:0.62 MinSub:-0.26
+Best: (30, 90, 0.03, 6) Score:-100.46 MinMDD:-46.13% FullCal:0.49 MinSub:0.00
+Best: (30, 105, 0.03, 6) Score:-100.36 MinMDD:-35.78% FullCal:0.43 MinSub:0.24
+Best: (30, 30, 0.03, 8) Score:-100.32 MinMDD:-32.22% FullCal:0.39 MinSub:-0.02
+Best: (30, 60, 0.07, 8) Score:-100.31 MinMDD:-31.29% FullCal:0.81 MinSub:0.56
+Best: (30, 60, 0.09, 8) Score:-100.31 MinMDD:-30.94% FullCal:1.14 MinSub:0.72
+
+FINAL BEST: ((30, 60, 0.09, 8), np.float64(-0.3093811101500006), np.float64(1.142642236281902), np.float64(0.720135801014222))
