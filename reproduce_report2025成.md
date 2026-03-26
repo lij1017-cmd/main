@@ -47,7 +47,7 @@
 ## 交易執行
 - T 日產生訊號，T+1 日以收盤價執行  
 - 持倉管理：  
-  - 若原有持股仍位列前 3 名 → 保持續抱  
+  - 若原有持股仍位列前 3 名 → 保持原持有股數續抱  
   - 僅賣出跌出排名的標的，並新增新的標的  
 
 ---
@@ -82,8 +82,8 @@
 ---
 
 ## 策略績效目標
-- Calmar Ratio > 5  
-- 最大回撤 (MDD) < 18%  
+- Calmar Ratio > 4  
+- 最大回撤 (MDD) < 25%  
 
 ---
 
@@ -96,19 +96,19 @@
 ---
 
 ## 績效表現 (2019–2025)
-- 年化報酬率 (CAGR)：30.44%  
-- 最大回撤 (MaxDD)：-12.78%  
-- Calmar Ratio：2.38  
+- 年化報酬率 (CAGR)：XX%  
+- 最大回撤 (MaxDD)：-XX%  
+- Calmar Ratio：XX.XX  
 
 ---
 
 ## 檔案清單與產出
-- **trendstrategy_equity2025成.ipynb**：完整程式碼，含資料清理、停損機制與參數最佳化  
-- **trendstrategy_results_equity2025成.xlsx**：  
+- **trendstrategy_equityNEW.ipynb**：完整程式碼，含資料清理、停損機制與參數最佳化。把最佳化參數集中在同一區塊，以利修正使用。每段程式都要以繁體中文詳細說明之。  
+- **trendstrategy_results_equityNEW.xlsx**：  
   - Trades：詳細交易明細  
   - Trades2：成對交易紀錄（進出場原因）  
   - Equity_Curve：每日權益曲線與回撤  
   - Equity_Hold：持股明細（含現金、市值）  
   - Daily：每日持股快照  
   - Summary：績效總結  
-- **reproduce_report2025成.md**：策略說明文件，繁體中文撰寫，嚴謹清晰
+- **reproduce_equityNEW.md**：策略說明文件，繁體中文撰寫，嚴謹清晰
