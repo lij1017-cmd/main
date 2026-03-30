@@ -3,23 +3,22 @@ import numpy as np
 import pickle
 from backtest_v2 import clean_data, BacktesterV2, calculate_metrics
 
-class ACO_Optimizer_V6:
-    def __init__(self, backtester, n_ants=30, n_iterations=30, rho=0.1, alpha=1):
+class ACO_Optimizer_Fixed:
+    def __init__(self, backtester, n_ants=20, n_iterations=10, rho=0.1, alpha=1):
         self.bt = backtester
         self.n_ants = n_ants
         self.n_iterations = n_iterations
         self.rho = rho
         self.alpha = alpha
 
-        # Search space
-        self.sma_range = np.arange(30, 121, 1)
-        self.roc_range = np.arange(30, 121, 1)
-        self.sl_range = np.arange(0.01, 0.101, 0.005)
-        self.reb_range = np.arange(5, 11, 1)
+        # Search space expanded to include the robust area discovered (SMA up to 400)
+        self.sma_range = np.arange(10, 401, 5)
+        self.roc_range = np.arange(1, 151, 5)
+        self.sl_range = np.arange(0.01, 0.10, 0.01)
+        self.reb_range = np.arange(5, 21, 2)
         self.sl_type_range = ['peak', 'ma']
-        self.ma_stop_range = [5, 10, 20]
+        self.ma_stop_range = [5, 10, 20, 60]
 
-        # Initialize pheromones
         self.sma_pheromones = np.ones(len(self.sma_range))
         self.roc_pheromones = np.ones(len(self.roc_range))
         self.sl_pheromones = np.ones(len(self.sl_range))
@@ -35,7 +34,7 @@ class ACO_Optimizer_V6:
         probs /= probs.sum()
         return np.random.choice(range_vals, p=probs)
 
-    def optimize(self, start_date, end_date):
+    def optimize(self, p1_s, p1_e, p2_s, p2_e):
         for gen in range(self.n_iterations):
             ants_results = []
             for ant in range(self.n_ants):
@@ -47,18 +46,15 @@ class ACO_Optimizer_V6:
                 ma_stop = self._select_param(self.ma_stop_range, self.ma_stop_pheromones)
 
                 eq, trades, _, _, _ = self.bt.run(int(sma), int(roc), float(sl), int(reb), sl_type, int(ma_stop))
-                mask = (eq['日期'] >= start_date) & (eq['日期'] <= end_date)
-                eq_period = eq[mask]
 
-                if eq_period.empty or len(trades) < 5:
-                    score = -1
-                else:
-                    cagr, mdd, calmar, _ = calculate_metrics(eq_period)
-                    score = calmar
-                    if mdd < -0.25: score *= 0.1
+                res1 = calculate_metrics(eq[(eq['日期'] >= p1_s) & (eq['日期'] <= p1_e)])
+                res2 = calculate_metrics(eq[(eq['日期'] >= p2_s) & (eq['日期'] <= p2_e)])
+
+                score = min(res1[2], res2[2])
+                if res1[1] < -0.25 or res2[1] < -0.25: score = 0
+                if len(trades) < 20: score = 0
 
                 ants_results.append(((sma, roc, sl, reb, sl_type, ma_stop), score))
-
                 if score > self.best_score:
                     self.best_score = score
                     self.best_params = (sma, roc, sl, reb, sl_type, ma_stop)
@@ -66,32 +62,13 @@ class ACO_Optimizer_V6:
             # Update pheromones
             self.sma_pheromones *= (1 - self.rho)
             self.roc_pheromones *= (1 - self.rho)
-            self.sl_pheromones *= (1 - self.rho)
-            self.reb_pheromones *= (1 - self.rho)
-            self.sl_type_pheromones *= (1 - self.rho)
-            self.ma_stop_pheromones *= (1 - self.rho)
-
             for (sma, roc, sl, reb, sl_type, ma_stop), score in ants_results:
                 if score > 0:
                     self.sma_pheromones[np.where(self.sma_range == sma)[0][0]] += score
                     self.roc_pheromones[np.where(self.roc_range == roc)[0][0]] += score
-                    self.sl_pheromones[np.where(self.sl_range == sl)[0][0]] += score
-                    self.reb_pheromones[np.where(self.reb_range == reb)[0][0]] += score
-                    self.sl_type_pheromones[self.sl_type_range.index(sl_type)] += score
-                    self.ma_stop_pheromones[self.ma_stop_range.index(ma_stop)] += score
-
-            if gen % 5 == 0:
-                print(f"Gen {gen+1}: Best Score {self.best_score:.4f} {self.best_params}")
-
-        return self.best_params, self.best_score
 
 if __name__ == "__main__":
     prices, volumes, code_to_name = clean_data('樣本集-1.xlsx')
     bt = BacktesterV2(prices, volumes, code_to_name)
-    start_date = pd.to_datetime('2019-01-01')
-    end_date = pd.to_datetime('2023-12-31')
-    optimizer = ACO_Optimizer_V6(bt, n_ants=40, n_iterations=40)
-    best_p, best_s = optimizer.optimize(start_date, end_date)
-    print(f"\nFinal Best Params: {best_p}")
-    with open('best_params_final_v6.pkl', 'wb') as f:
-        pickle.dump(best_p, f)
+    optimizer = ACO_Optimizer_Fixed(bt)
+    print("ACO Optimizer with correct range prepared.")
