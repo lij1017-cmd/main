@@ -4,7 +4,7 @@
 本策略採用 **Asset Class Trend Following** 方法，針對 131 檔商品進行回測。核心邏輯結合了雙移動平均線 (Double SMA) 的趨勢過濾、ROC 動能指標，以及多重流動性與價格趨勢濾網。策略旨在最大化風險調整後報酬（Calmar Ratio），並透過螞蟻演算法（ACO）對參數進行全域最佳化。
 
 ## 2. 核心參數與最佳化結果
-經過 2019-2023 年的樣本集最佳化，並在 2024-2025 年的測試集驗證，最終選定之最適參數如下：
+經過多輪最佳化與參數高原分析，最終選定之最適參數如下：
 
 - **SMA 1 (短期均線):** 310
 - **SMA 2 (長期均線):** 290
@@ -38,13 +38,15 @@
 - **年化報酬率 (CAGR):** 32.60%
 - **最大回撤 (MaxDD):** -13.79%
 - **Calmar Ratio:** 2.36
-- **勝率 (Win Rate):** ~45% (視交易對而定)
+- **勝率 (Win Rate):** 45.45% (成對交易統計)
 
 ### 分段表現
 - **樣本集 (2019-2023):** CAGR 35.43%, MaxDD -13.84%, Calmar 2.56
 - **測試集 (2024-2025):** CAGR 27.48%, MaxDD -6.94%, Calmar 3.96
 
 ## 5. 檔案清單
-- `trendstrategy_equity2MA.ipynb`: 完整程式碼與最佳化流程。
-- `trendstrategy_results_equity2MA.xlsx`: 詳細交易明細與績效報表。
-- `reproduce_equity2MA.md`: 本說明文件。
+- `trendstrategy_equity2MA-1.ipynb`: 完整程式碼與最佳化流程。
+- `trendstrategy_results_equity2MA-1.xlsx`: 詳細交易明細與績效報表。
+- `reproduce_equity2MA-1.md`: 本說明文件。
+- `plateau_table_equity2MA-1.xlsx`: 參數高原分析數據。
+- `plateau_report_equity2MA-1.md`: 參數高原分析說明。
