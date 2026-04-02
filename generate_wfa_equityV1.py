@@ -4,53 +4,43 @@ import xlsxwriter
 import datetime
 
 # =============================================================================
-# 函式：資料清洗與預處理
+# 函式：資料清洗與預處理 (與使用者資料格式同步)
 # =============================================================================
 def clean_data(filepath):
     """
     讀取並清洗 Excel 資料，包含價格與成交量分頁。
-    格式要求：
-    - Sheet '還原收盤價': 第0列為代號，第1列為名稱，第0欄為日期字串。
-    - Sheet '成交量': 格式同上。
     """
-    # 讀取還原收盤價與成交量分頁
     df_prices = pd.read_excel(filepath, sheet_name='還原收盤價', header=None)
     df_volume = pd.read_excel(filepath, sheet_name='成交量', header=None)
 
-    # 提取股票代號與名稱 (位於 Excel 的第 0 與 1 列)
     stock_codes = df_prices.iloc[0, 1:].values
     stock_names = df_prices.iloc[1, 1:].values
 
-    # 提取日期 (第 0 欄，從第 2 列開始)，並轉換格式
-    # 原始格式如 '20190102收盤價'，取前 8 碼轉換為日期格式
     date_strings = df_prices.iloc[2:, 0].astype(str).str[:8]
     dates = pd.to_datetime(date_strings, format='%Y%m%d')
 
-    # 提取價格數據並設定索引與欄位名稱
     prices = df_prices.iloc[2:, 1:].astype(float)
     prices.index = dates
     prices.columns = stock_codes
 
-    # 提取成交量數據並設定索引與欄位名稱
     volumes = df_volume.iloc[2:, 1:].astype(float)
     volumes.index = dates
     volumes.columns = stock_codes
 
-    # 建立股票代號對應名稱的字典
     code_to_name = dict(zip(stock_codes, stock_names))
 
-    # 資料清洗：價格缺失值向後填充 (ffill) 或向前填充 (bfill)，成交量缺失值補 0
+    # 資料清洗：價格向後/向前填充，成交量補 0
     prices = prices.ffill().bfill()
     volumes = volumes.fillna(0)
 
     return prices, volumes, code_to_name
 
 # =============================================================================
-# 類別：資產類別趨勢追蹤回測引擎
+# 類別：資產類別趨勢追蹤回測引擎 (動態分配版 V1)
 # =============================================================================
 class Backtester:
     """
-    回測引擎核心，支援多重濾網、停損與再平衡邏輯。
+    回測引擎，支援動態資金分配 (Dynamic V1)，確保每個槽位投資上限為 1000 萬。
     """
     def __init__(self, prices, volumes, code_to_name, initial_capital=30000000):
         self.prices_df = prices
@@ -67,11 +57,8 @@ class Backtester:
         執行單一區間的回測模擬。
         """
         # 1. 技術指標預計算
-        # 計算長期均線 (SMA) 與 動能值 (ROC)
         sma = self.prices_df.rolling(window=sma_period).mean().values
         roc = self.prices_df.pct_change(periods=roc_period).values
-
-        # 多重均線濾網：計算 5, 10, 20 日移動平均線
         sma5 = self.prices_df.rolling(window=5).mean().values
         sma10 = self.prices_df.rolling(window=10).mean().values
         sma20 = self.prices_df.rolling(window=20).mean().values
@@ -85,182 +72,160 @@ class Backtester:
         first_idx = all_indices[0]
         last_idx = all_indices[-1]
 
-        # 確保有足夠的歷史數據計算各項技術指標
-        start_buffer = max(sma_period, roc_period, 20)
-        loop_start = max(first_idx, start_buffer)
+        # 緩衝期：303日均線需至少303天數據。設定全域基準點確保再平衡日期不位移。
+        global_start_buffer = max(sma_period, roc_period, 20)
+        loop_start = max(first_idx, global_start_buffer)
 
-        # 2. 帳戶狀態與持股槽位初始化
-        # 剩餘現金初始值
-        cash = float(self.initial_capital)
-        # 設定 3 個持股槽位，初始為空
-        # 每個槽位記錄：資產索引、股數、持期間最高價、投入預算、進場日期、進場價格
+        # 2. 帳戶狀態與槽位初始化 (Dynamic V1)
+        surplus_pool = float(self.initial_capital)
         slots = {0: None, 1: None, 2: None}
 
         equity_curve_list = []
         trade_count = 0
 
-        # 在有效計算點之前的期間，權益值維持初始資金
-        for i in range(first_idx, loop_start):
-            equity_curve_list.append({'日期': self.dates[i], '權益': float(self.initial_capital)})
-
         # 3. 每日模擬循環
+        # 核心：從 loop_start 開始記錄權益並執行交易。
         for i in range(loop_start, last_idx + 1):
             date = self.dates[i]
             current_prices = self.prices[i]
 
-            # A. 計算每日權益總額 (現金 + 所有持股市值)
+            # A. 計算今日權益總額
             stock_mv = 0.0
             for s_id, info in slots.items():
-                if info:
+                if info and 'asset_idx' in info:
                     stock_mv += info['shares'] * current_prices[info['asset_idx']]
 
-            total_equity = cash + stock_mv
+            total_equity = surplus_pool + stock_mv
             equity_curve_list.append({'日期': date, '權益': total_equity})
 
-            # 若已達區間最後一天，則停止後續買賣邏輯
+            # 若未達可計算指標的緩衝期，或已達最後一日，不執行交易邏輯
             if i == last_idx:
-                break
+                continue
 
-            # 預設次日開盤/收盤執行價格 (T+1 執行)
-            next_prices = self.prices[i+1]
+            next_prices = self.prices[i+1] # T+1 執行價格
 
-            # B. 檢查停損機制 (最高價回落停損)
+            # B. 檢查停損機制 (最高價回落)
             triggered_slots = []
             for s_id, info in slots.items():
-                if info:
+                if info and 'asset_idx' in info:
                     a_idx = info['asset_idx']
                     curr_p = current_prices[a_idx]
-                    # 更新該部位持有期間的最高價
                     if curr_p > info['max_price']:
                         info['max_price'] = curr_p
-                    # 判斷目前價格是否跌破最高價回落之百分比
                     if curr_p < info['max_price'] * (1 - stop_loss_pct):
                         triggered_slots.append(s_id)
 
-            # 執行停損部位的賣出動作
+            # 執行停損賣出
             for s_id in triggered_slots:
                 info = slots[s_id]
                 a_idx = info['asset_idx']
                 sell_price = next_prices[a_idx]
                 shares = info['shares']
-
-                # 計算手續費 (0.1425%) 與 交易稅 (0.3%)
                 sell_fee = shares * sell_price * 0.001425
                 sell_tax = shares * sell_price * 0.003
                 proceeds = shares * sell_price - sell_fee - sell_tax
 
-                # 將款項回收到現金帳戶並重設槽位
-                cash += proceeds
+                surplus_pool += proceeds
                 trade_count += 1
                 slots[s_id] = None
 
-            # C. 再平衡邏輯 (每隔固定天數執行)
+            # C. 再平衡邏輯 (錨定 loop_start，解決各區間再平衡日期不一致之問題)
             is_rebalance_day = (i - loop_start) % rebalance_interval == 0
             if is_rebalance_day:
-                # 篩選符合條件的候選名單：
-                # 1. 價格 > SMA 且 ROC > 0 (基本趨勢)
-                # 2. 成交金額 > 3000 萬 (流動性濾網)
-                # 3. 價格 > 5日、10日、20日均線 (多重均線濾網)
+                # 篩選符合條件標的
                 signals = []
-                sorted_all = np.argsort(roc[i])[::-1] # 依照 ROC 從大到小排序
+                sorted_all = np.argsort(roc[i])[::-1]
                 for idx in sorted_all:
-                    if len(signals) >= 3: break # 最多取前三名
+                    if len(signals) >= 3: break
                     p, s, r = current_prices[idx], sma[i][idx], roc[i][idx]
                     v = self.volumes[i][idx]
-                    amount = p * v * 1000 # 換算為成交金額 (TWD)
-
-                    cond_liquidity = amount > 30000000
-                    cond_trend = p > s and r > 0
-                    cond_multi_ma = p > sma5[i][idx] and p > sma10[i][idx] and p > sma20[i][idx]
-
-                    if cond_trend and cond_liquidity and cond_multi_ma:
+                    amount = p * v * 1000
+                    if (p > s and r > 0 and amount > 30000000 and
+                        p > sma5[i][idx] and p > sma10[i][idx] and p > sma20[i][idx]):
                         signals.append(idx)
 
-                # 處理現有持股部位：若不在新訊號名單中則賣出
+                # 處理現有持股：排名外則賣出並保留預算在槽位中
                 signal_to_slot = {}
                 for s_id, info in slots.items():
-                    if info:
+                    if info and 'asset_idx' in info:
                         if info['asset_idx'] in signals:
-                            signal_to_slot[info['asset_idx']] = s_id # 繼續持有
+                            signal_to_slot[info['asset_idx']] = s_id
                         else:
-                            # 排名掉出前三或不符條件，執行賣出
                             a_idx = info['asset_idx']
                             sell_price = next_prices[a_idx]
                             shares = info['shares']
                             sell_fee = shares * sell_price * 0.001425
                             sell_tax = shares * sell_price * 0.003
                             proceeds = shares * sell_price - sell_fee - sell_tax
-                            cash += proceeds
+                            slots[s_id] = {'pending_budget': proceeds}
                             trade_count += 1
-                            slots[s_id] = None
+                    elif info and 'pending_budget' in info:
+                        pass
+                    else:
+                        # 槽位空缺，撥入預算
+                        alloc = min(surplus_pool, 10000000.0)
+                        surplus_pool -= alloc
+                        slots[s_id] = {'pending_budget': alloc}
 
-                # 買入新進榜的標的
+                # 買入新標的 (上限 1000 萬)
                 new_signals = [s for s in signals if s not in signal_to_slot]
-                empty_slots = [sid for sid, data in slots.items() if data is None]
-
-                # 每個槽位的預算分配 (初始資金 3000萬 的 1/3)
-                slot_budget = self.initial_capital / 3.0
+                available_sids = [sid for sid, data in slots.items() if data and 'pending_budget' in data]
 
                 for sig in new_signals:
-                    if not empty_slots: break
-                    target_sid = empty_slots.pop(0)
+                    if not available_sids: break
+                    target_sid = available_sids.pop(0)
+                    budget = slots[target_sid]['pending_budget']
+                    invest_budget = min(budget, 10000000.0)
 
                     buy_price_exec = next_prices[sig]
-                    cost_per_share = buy_price_exec * 1.001425 # 含買入手續費
-                    # 計算可買進股數 (以 1000 股為最小單位)
-                    shares = (int(slot_budget // cost_per_share) // 1000) * 1000
+                    cost_per_share = buy_price_exec * 1.001425
+                    shares = (int(invest_budget // cost_per_share) // 1000) * 1000
 
                     if shares > 0:
                         actual_cost = shares * buy_price_exec * 1.001425
-                        if cash >= actual_cost:
-                            cash -= actual_cost
-                            slots[target_sid] = {
-                                'asset_idx': sig,
-                                'shares': shares,
-                                'max_price': buy_price_exec,
-                                'budget': actual_cost,
-                                'entry_date': date,
-                                'entry_price': buy_price_exec
-                            }
-                            trade_count += 1
+                        surplus_pool += (budget - actual_cost)
+                        slots[target_sid] = {
+                            'asset_idx': sig,
+                            'shares': shares,
+                            'max_price': buy_price_exec,
+                            'budget': actual_cost,
+                            'entry_date': date,
+                            'entry_price': buy_price_exec
+                        }
+                        trade_count += 1
+                    else:
+                        surplus_pool += budget
+                        slots[target_sid] = None
+
+                # 清理本期未使用的槽位預算
+                for sid in list(slots.keys()):
+                    if slots[sid] and 'pending_budget' in slots[sid]:
+                        surplus_pool += slots[sid]['pending_budget']
+                        slots[sid] = None
 
         return pd.DataFrame(equity_curve_list), trade_count
 
 # =============================================================================
-# 函式：計算績效指標
+# 績效指標計算 (同步使用者之 WFA 基準：僅計算主動交易期間)
 # =============================================================================
 def calculate_metrics(eq_df):
-    """
-    計算回測績效指標：年化報酬率 (CAGR)、最大回撤 (MaxDD)、Calmar Ratio。
-    """
     if eq_df is None or eq_df.empty: return 0, 0, 0
     equity = eq_df['權益']
-
-    # 計算總報酬率
+    # 將分母設為實際有數據的天數 (即排除指標緩衝期後的交易日)
     total_return = (equity.iloc[-1] / equity.iloc[0]) - 1
-
-    # 計算回測涵蓋的總天數與年數
     days = (eq_df['日期'].iloc[-1] - eq_df['日期'].iloc[0]).days
     years = days / 365.25
-
-    # 計算年化報酬率 (CAGR)
     cagr = (1 + total_return) ** (1 / years) - 1 if years > 0 else 0
-
-    # 計算最大回撤 (MaxDD)
     rolling_max = equity.cummax()
     drawdowns = (equity - rolling_max) / rolling_max
     max_dd = drawdowns.min()
-
-    # 計算 Calmar Ratio (CAGR / |MaxDD|)
     calmar = cagr / abs(max_dd) if max_dd != 0 else 0
-
     return cagr, max_dd, calmar
 
 # =============================================================================
-# 主程式：執行 9 個區間的 Walk-Forward Analysis 並產出 Excel
+# 執行與 Excel 生成
 # =============================================================================
 if __name__ == "__main__":
-    # --- 1. 設定參數與資料讀取 ---
     DATA_FILE = '資料-1.xlsx'
     SMA_PERIOD = 303
     ROC_PERIOD = 14
@@ -268,7 +233,6 @@ if __name__ == "__main__":
     REBALANCE = 9
     INITIAL_CAPITAL = 30000000
 
-    # 定義 9 個 WFA 滾動區間
     periods = [
         ('2019-01-02', '2021-12-31'),
         ('2019-07-01', '2022-06-30'),
@@ -281,18 +245,14 @@ if __name__ == "__main__":
         ('2023-01-02', '2025-12-31'),
     ]
 
-    print("正在準備資料中...")
     prices, volumes, code_to_name = clean_data(DATA_FILE)
     bt = Backtester(prices, volumes, code_to_name, INITIAL_CAPITAL)
 
     summary_results = []
     all_equity_curves = []
 
-    # --- 2. 執行迴圈計算各區間績效 ---
     for idx, (start_str, end_str) in enumerate(periods):
-        print(f"[{idx+1}/9] 正在執行區間: {start_str} 至 {end_str}")
-
-        # 執行回測模擬，獲取權益曲線與交易次數
+        print(f"正在執行 WFA 區間 {idx+1}: {start_str} 至 {end_str}")
         eq_df, trades = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, start_str, end_str)
         cagr, mdd, calmar = calculate_metrics(eq_df)
 
@@ -305,39 +265,30 @@ if __name__ == "__main__":
             '交易次數': trades
         })
 
-        # 複製權益曲線數據以便後續彙整至單一 Sheet
         temp_eq = eq_df.copy()
         temp_eq.columns = ['日期', f'區間{idx+1}_權益']
         all_equity_curves.append(temp_eq)
 
-    # --- 3. 產生 Excel 報表 ---
     OUTPUT_FILE = 'walk-forward-equityV1.xlsx'
     writer = pd.ExcelWriter(OUTPUT_FILE, engine='xlsxwriter')
 
-    # 產出 "Summary" 分頁：記錄各區間總結指標
     summary_df = pd.DataFrame(summary_results)
     summary_df.to_excel(writer, sheet_name='Summary', index=False)
-
     workbook = writer.book
     summary_sheet = writer.sheets['Summary']
 
-    # 定義 Excel 格式 (百分比、數字、表頭)
     percent_fmt = workbook.add_format({'num_format': '0.00%', 'align': 'center'})
     num_fmt = workbook.add_format({'num_format': '0.00', 'align': 'center'})
     header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center'})
 
-    # 套用表頭格式
     for col_num, value in enumerate(summary_df.columns.values):
         summary_sheet.write(0, col_num, value, header_fmt)
 
-    # 設定欄位寬度與數值格式
     summary_sheet.set_column('A:A', 35)
     summary_sheet.set_column('B:C', 18, percent_fmt)
     summary_sheet.set_column('D:D', 15, num_fmt)
     summary_sheet.set_column('E:E', 12, num_fmt)
 
-    # 產出 "Equity_Curve" 分頁：記錄各區間每日權益變化並畫圖
-    # 透過 merge 將多個區間的權益曲線依據日期整合在一起
     final_curves_df = all_equity_curves[0]
     for next_df in all_equity_curves[1:]:
         final_curves_df = pd.merge(final_curves_df, next_df, on='日期', how='outer')
@@ -346,35 +297,24 @@ if __name__ == "__main__":
     final_curves_df.to_excel(writer, sheet_name='Equity_Curve', index=False)
     curves_sheet = writer.sheets['Equity_Curve']
 
-    # 設定日期欄位格式
     date_fmt = workbook.add_format({'num_format': 'yyyy/mm/dd', 'align': 'center'})
     curves_sheet.set_column('A:A', 12, date_fmt)
 
-    # 為每個區間建立嵌入式折線圖
     for idx in range(len(periods)):
         chart = workbook.add_chart({'type': 'line'})
         period_label = f"Interval {idx+1}"
-        col_idx = idx + 1 # 第 0 欄為日期
+        col_idx = idx + 1
         max_row = len(final_curves_df)
-
-        # 設定數據系列
         chart.add_series({
             'name':       ['Equity_Curve', 0, col_idx],
             'categories': ['Equity_Curve', 1, 0, max_row, 0],
             'values':     ['Equity_Curve', 1, col_idx, max_row, col_idx],
             'line':       {'width': 1.5},
         })
-
-        # 設定圖表標題與軸名稱
         chart.set_title({'name': f'Equity Curve - {period_label}'})
-        chart.set_x_axis({'name': '日期'})
-        chart.set_y_axis({'name': '權益 (Equity)'})
         chart.set_legend({'position': 'none'})
         chart.set_size({'width': 600, 'height': 350})
-
-        # 將圖表依序插入在資料欄位的右側
         curves_sheet.insert_chart(idx * 18, len(periods) + 2, chart)
 
-    # 關閉並儲存 Excel 檔案
     writer.close()
-    print(f"\n[完成] WFA 分析已結束，結果報表：{OUTPUT_FILE}")
+    print(f"回測完成！結果已儲存至: {OUTPUT_FILE}")
