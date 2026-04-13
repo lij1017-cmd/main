@@ -30,12 +30,13 @@ def main():
     # 呼叫 backtest_equityV2 中的 clean_data 函數，提取價格、成交量與股票名稱對應表
     prices, volumes, code_to_name = clean_data(CLEAN_DATA)
 
-    print(f"開始執行 equityV2 策略回測 (SMA={SMA_PERIOD}, ROC={ROC_PERIOD}, 停損={STOP_LOSS_PCT*100:.2f}%, 再平衡={REBALANCE}天)...")
+    print(f"開始執行 equityV2 策略回測 (參數設定：SMA={SMA_PERIOD}, ROC={ROC_PERIOD}, 停損={STOP_LOSS_PCT*100:.2f}%, 再平衡={REBALANCE}天)...")
     # 初始化回測引擎實例
     bt = BacktesterV2(prices, volumes, code_to_name, initial_capital=INITIAL_CAPITAL)
 
     # 執行完整期間回測
     # 核心邏輯：在 2026/04/01 之前選股池為 131 檔；2026/04/01 之後自動擴展至 138 檔
+    # 此版本新增了「備註」功能，會紀錄停損與再平衡指令
     eq_df, trades, hold, trades2, daily = bt.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, 'peak', 10)
 
     # --- 第三步：數據篩選與績效指標計算 ---
@@ -67,7 +68,7 @@ def main():
         # 2. Equity_Curve：記錄每日帳戶淨值與回撤變動
         res_record.to_excel(writer, sheet_name='Equity_Curve', index=False)
 
-        # 3. Equity_Hold：記錄每日持股摘要與可用現金
+        # 3. Equity_Hold：記錄每日持股摘要、可用現金及重要操作「備註」
         hold[hold['Date'] >= '2026-01-02'].to_excel(writer, sheet_name='Equity_Hold', index=False)
 
         # 4. Trades：詳細列出所有訊號 (買入、賣出、持倉保持) 的詳細資訊
@@ -97,7 +98,7 @@ def main():
     md_content = f"""# Asset Class Trend Following 策略回測報告 (equityV2)
 
 ## 1. 策略說明
-本報告針對 **equityV2** 版本進行總結，該版本在維持原有核心邏輯的基礎上，新增了 2026 Q2 的標的擴充規則。
+本報告針對 **equityV2** 版本進行總結，該版本在維持原有核心邏輯的基礎上，新增了 2026 Q2 的標的擴充規則，並優化了執行指令備註。
 
 - **參數配置**：
     * **SMA 週期**：{SMA_PERIOD}
@@ -106,7 +107,10 @@ def main():
     * **再平衡頻率**：每 {REBALANCE} 個交易日
 - **選股池異動**：
     * **2026/04/01 之前**：選股池規模為 131 檔。
-    * **2026/04/01 起**：正式納入 7 檔新標的 (3481 群創, 6446 藥華藥, 2368 金像電, 2344 華邦電, 3037 欣興, 2449 京元電, 7769 鴻勁)，選股池擴大至 138 檔。
+    * **2026/04/01 起**：正式納入 7 檔新標的，選股池擴大至 138 檔。
+- **功能優化**：
+    * **Equity_Hold 備註欄**：新增停損提醒與再平衡交易指令。
+    * **最後一日訊號**：2026/04/10 已產出完整再平衡指令，供次日執行參考。
 
 ---
 
@@ -115,12 +119,12 @@ def main():
 - **最大回撤 (MaxDD)**：**{mdd_rec:.2%}**
 - **卡瑪比率 (Calmar Ratio)**：**{calmar_rec:.2f}**
 - **總報酬率**：**{total_ret_rec:.2%}**
-- **有效買賣筆數**：**{trade_count_rec}**
+- **2026起交易筆數**：**{trade_count_rec}**
 
 ---
 
 ## 3. 交付檔案說明
-- `trendstrategy_results_equityV2.xlsx`：包含完整交易與持股明細的 Excel 檔案。
+- `trendstrategy_results_equityV2.xlsx`：包含完整交易、持股明細與「備註」指令的 Excel 檔案。
 - `trendstrategy_equityV2.ipynb`：可於 Jupyter 環境執行的互動式回測實作。
 - `backtest_equityV2.py`：封裝好的回測引擎模組。
 """
@@ -129,65 +133,51 @@ def main():
 
     # --- 第六步：產出 Jupyter Notebook 實作檔 (.ipynb) ---
     nb = nbf.v4.new_notebook()
-    # 新增標題與描述
-    nb.cells.append(nbf.v4.new_markdown_cell(f"# Asset Class Trend Following 策略實作 (equityV2)\\n\\n本筆記本詳細記錄了從 **2026-01-02** 開始的策略執行邏輯，並體現了 **2026-04-01** 起選股池擴充至 138 檔的動態調整規則。"))
+    nb.cells.append(nbf.v4.new_markdown_cell(f"# Asset Class Trend Following 策略實作 (equityV2)\\n\\n本筆記本詳細記錄了從 **2026-01-02** 開始的策略執行邏輯，包含 **備註指令欄位** 以利實務執行。"))
 
-    # 定義 Notebook 中的 Python 代碼段落，包含極為詳盡的繁體中文註解
     code_block = f"""import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from backtest_equityV2 import clean_data, BacktesterV2, calculate_metrics
 
-# --- 1. 資料讀取與載入說明 ---
-# 使用 '資料26Q2-1.xlsx' 數據源，該數據已預先完成缺失值填補(上市前補值與停牌處理)。
-# clean_data 函數會自動解析還原收盤價與成交量。
+# --- 1. 資料讀取與載入 ---
 prices, volumes, code_to_name = clean_data('{CLEAN_DATA}')
 
 # --- 2. 策略參數定義 ---
-# SMA (303) 與 ROC (14) 為核心動能與趨勢指標。
-# 停損 (sl) 設為 9.99%，再平衡 (reb) 週期為 9 天。
 sma_p, roc_p, sl_p, reb_p = {SMA_PERIOD}, {ROC_PERIOD}, {STOP_LOSS_PCT}, {REBALANCE}
 
 # --- 3. 執行回測運算 ---
-# 初始化回測類別並運行核心算法。
-# 回測類別已內建日期判斷逻辑：
-# - 當日期 < 2026/04/01 時，僅在 131 檔標的中進行篩選。
-# - 當日期 >= 2026/04/01 時，選股範圍擴大至 138 檔。
+# BacktesterV2 已內建「備註」欄位產生邏輯與動態選股池規則。
 bt = BacktesterV2(prices, volumes, code_to_name)
 eq, trades, hold, trades2, daily = bt.run(sma_p, roc_p, sl_p, reb_p, 'peak', 10)
 
-# --- 4. 數據切片與起始日設定 ---
-# 應要求從 2026/01/02 開始顯示結果，以便進行跨版本數據驗證。
+# --- 4. 數據篩選 (2026/01/02 起) ---
 mask = (eq['日期'] >= '2026-01-02')
 res_p = eq[mask]
 
-# --- 5. 權益曲線視覺化 ---
-# 繪製從 2026 年初至今的淨值變動趨勢圖。
+# --- 5. 視覺化：權益曲線 ---
 plt.figure(figsize=(12, 6))
-plt.plot(res_p['日期'], res_p['權益'], color='darkgreen', label='Equity Curve')
-plt.title('Equity Curve (equityV2 - Starting from 2026/01/02)', fontsize=14)
-plt.xlabel('Date (日期)', fontsize=12)
-plt.ylabel('Account Value (帳戶價值)', fontsize=12)
-plt.legend()
-plt.grid(True, which='both', linestyle='--', alpha=0.5)
-plt.tight_layout()
+plt.plot(res_p['日期'], res_p['權益'], color='darkgreen', linewidth=2)
+plt.title('Equity Curve (equityV2 - With Remarks)', fontsize=14)
+plt.grid(True, linestyle='--', alpha=0.5)
 plt.show()
 
-# --- 6. 績效統計指標輸出 ---
-# 計算並列印該時段內的年化報酬率、最大回撤等關鍵績效數據。
+# --- 6. 最後一日 (2026/04/10) 執行指令查看 ---
+last_day_remark = hold.iloc[-1]['備註']
+print(f"2026/04/10 操作備註：\\n{{last_day_remark}}")
+
+# --- 7. 績效統計 ---
 cagr, mdd, calmar, total_ret = calculate_metrics(res_p)
-print(f"年化報酬率 (CAGR): {{cagr:.2%}}")
+print(f"\\n年化報酬率 (CAGR): {{cagr:.2%}}")
 print(f"最大回撤 (MaxDD): {{mdd:.2%}}")
 print(f"卡瑪比率 (Calmar Ratio): {{calmar:.2f}}")
-print(f"總報酬率 (Total Return): {{total_ret:.2%}}")
 """
     nb.cells.append(nbf.v4.new_code_cell(code_block))
 
-    # 將 Notebook 儲存至磁碟
     with open('trendstrategy_equityV2.ipynb', 'w', encoding='utf-8') as f:
         nbf.write(nb, f)
 
-    print(f"✅ 交付文件產出完成：Excel, Markdown, Notebook 均已就緒。")
+    print(f"✅ 交付文件產出完成：Excel (含備註欄), Markdown, Notebook 均已就緒。")
 
 if __name__ == "__main__":
     main()
