@@ -49,8 +49,8 @@ def calculate_indicators(prices_df):
 
     return ema200, macd_line, signal_line, macd_hist, volatility, swing_high, swing_low
 
-class PhantomLongShortBacktester:
-    def __init__(self, prices, volumes, code_to_name, initial_capital=30000000):
+class PhantomBacktester:
+    def __init__(self, prices, volumes, code_to_name, initial_capital=30000000, mode='LS'):
         self.prices_df = prices
         self.volumes_df = volumes
         self.prices = prices.values
@@ -58,6 +58,7 @@ class PhantomLongShortBacktester:
         self.assets = prices.columns
         self.code_to_name = code_to_name
         self.initial_capital = initial_capital
+        self.mode = mode # 'L' for Long-only, 'LS' for Long/Short
 
         # Strategy Parameters
         self.ema_len = 200
@@ -68,8 +69,13 @@ class PhantomLongShortBacktester:
         self.vol_frac = 0.5
         self.rr_target = 1.5
 
+        # Transaction Costs
+        self.commission_rate = 0.001425
+        self.tax_rate = 0.003
+        self.short_fee_rate = 0.001 # 融券手續費
+
     def run(self):
-        print("Calculating indicators...")
+        # print(f"Calculating indicators (Mode: {self.mode})...")
         ema200, macd_line, signal_line, macd_hist, volatility, swing_high, swing_low = calculate_indicators(self.prices_df)
 
         ema200_v = ema200.values
@@ -85,15 +91,11 @@ class PhantomLongShortBacktester:
         equity_curve = []
         trades_log = []
 
-        # Track if a 'break' of support/resistance happened recently
-        # break_low_active[asset] = True if price is currently below swing_low
-        # break_high_active[asset] = True if price is currently above swing_high
         break_low_active = np.zeros(len(self.assets), dtype=bool)
         break_high_active = np.zeros(len(self.assets), dtype=bool)
 
         start_idx = max(self.ema_len, self.macd_slow, 20)
 
-        print(f"Starting backtest from index {start_idx}...")
         peak_equity = float(self.initial_capital)
         for i in range(start_idx, len(self.dates)):
             curr_prices = self.prices[i]
@@ -146,13 +148,13 @@ class PhantomLongShortBacktester:
                         exit_price = next_prices[a_idx]
                         shares = info['shares']
                         if info['type'] == 'Long':
-                            # Sell Long: receive Cash minus commission/tax
-                            proceeds = shares * exit_price * (1 - 0.001425 - 0.003)
+                            # Sell Long: receive Cash minus commission minus tax
+                            proceeds = shares * exit_price * (1 - self.commission_rate - self.tax_rate)
                             surplus_pool += proceeds
                             pnl = proceeds - info['cost']
                         else:
                             # Buy to Cover Short: pay Cash plus commission
-                            cost_to_cover = shares * exit_price * (1 + 0.001425)
+                            cost_to_cover = shares * exit_price * (1 + self.commission_rate)
                             surplus_pool -= cost_to_cover
                             pnl = info['cost'] - cost_to_cover
 
@@ -167,31 +169,23 @@ class PhantomLongShortBacktester:
                         })
                         slots[s_id] = None
 
-            # C. Entry Signals (Long & Short)
+            # C. Entry Signals
             if any(s is None for s in slots.values()):
                 for a in range(len(self.assets)):
                     cp = curr_prices[a]
-
-                    # Support/Resistance from previous window
                     support = swing_low_v[i-1, a]
                     resistance = swing_high_v[i-1, a]
                     tol = vol_v[i, a] * self.vol_frac
 
-                    # Update break status
-                    if cp < support - tol:
-                        break_low_active[a] = True
-                    if cp > resistance + tol:
-                        break_high_active[a] = True
+                    if cp < support - tol: break_low_active[a] = True
+                    if cp > resistance + tol: break_high_active[a] = True
 
-                    # Check if already held
                     if any(info and info['asset_idx'] == a for info in slots.values()):
                         continue
 
-                    # MACD Crossovers
                     macd_cross_up = macd_line_v[i, a] > signal_line_v[i, a] and macd_line_v[i-1, a] <= signal_line_v[i-1, a]
                     macd_cross_down = macd_line_v[i, a] < signal_line_v[i, a] and macd_line_v[i-1, a] >= signal_line_v[i-1, a]
 
-                    # Core Filters
                     core_long = macd_cross_up and macd_line_v[i, a] < 0 and cp > ema200_v[i, a]
                     core_short = macd_cross_down and macd_line_v[i, a] > 0 and cp < ema200_v[i, a]
 
@@ -202,7 +196,7 @@ class PhantomLongShortBacktester:
                             if stop_loss < cp:
                                 surplus_pool = self.enter_trade(slots, surplus_pool, a, i, 'Long', cp, next_prices[a], stop_loss, trades_log)
                                 break_low_active[a] = False
-                    elif core_short:
+                    elif core_short and self.mode == 'LS':
                         reclaim = break_high_active[a] and cp < resistance
                         if reclaim:
                             stop_loss = resistance + tol
@@ -220,16 +214,16 @@ class PhantomLongShortBacktester:
                 if t_type == 'Long':
                     if surplus_pool < 1000000: return surplus_pool
                     invest_budget = min(surplus_pool, budget_per_slot)
-                    shares = (invest_budget // (next_p * 1.001425) // 1000) * 1000
+                    shares = (invest_budget // (next_p * (1 + self.commission_rate)) // 1000) * 1000
                     if shares <= 0: return surplus_pool
-                    cost = shares * next_p * 1.001425
+                    cost = shares * next_p * (1 + self.commission_rate)
                     surplus_pool -= cost
                 else:
-                    # Short: receive proceeds minus commission
-                    # (Note: Margin requirements not strictly modeled, but using budget as proxy)
-                    shares = (budget_per_slot // (next_p * 1.001425) // 1000) * 1000
+                    # Short: receive proceeds minus commission minus tax minus short fee
+                    shares = (budget_per_slot // (next_p * (1 + self.commission_rate)) // 1000) * 1000
                     if shares <= 0: return surplus_pool
-                    cost = shares * next_p * (1 - 0.001425)
+                    # Seller pays tax (0.3%), commission (0.1425%), and short fee (0.1%)
+                    cost = shares * next_p * (1 - self.commission_rate - self.tax_rate - self.short_fee_rate)
                     surplus_pool += cost
 
                 risk = abs(next_p - stop_loss)
@@ -269,34 +263,33 @@ def calculate_metrics(equity_curve_df):
 
 if __name__ == "__main__":
     prices, volumes, code_to_name = clean_data('資料-1.xlsx')
-    bt = PhantomLongShortBacktester(prices, volumes, code_to_name)
-    equity, trades = bt.run()
 
-    print("\n" + "="*40)
-    print("BACKTEST RESULTS (Long/Short refined)")
-    print("="*40)
-    if not equity.empty:
-        cagr, max_dd, calmar, total_ret = calculate_metrics(equity)
-        print(f"Initial Capital: {bt.initial_capital:,.2f}")
-        print(f"Final Equity: {equity.iloc[-1]['權益']:,.2f}")
-        print(f"Total Return: {total_ret*100:.2f}%")
-        print(f"CAGR: {cagr*100:.2f}%")
-        print(f"Max Drawdown: {max_dd*100:.2f}%")
-        print(f"Calmar Ratio: {calmar:.2f}")
+    print("Running Long-Only Backtest...")
+    bt_l = PhantomBacktester(prices, volumes, code_to_name, mode='L')
+    equity_l, trades_l = bt_l.run()
 
-    if not trades.empty:
-        completed_trades = trades[trades['Reason'].notna()]
-        print(f"Total Completed Trades: {len(completed_trades)}")
-        if len(completed_trades) > 0:
-            win_rate = (completed_trades['PnL'] > 0).mean()
-            print(f"Win Rate: {win_rate*100:.2f}%")
+    print("Running Long/Short Backtest...")
+    bt_ls = PhantomBacktester(prices, volumes, code_to_name, mode='LS')
+    equity_ls, trades_ls = bt_ls.run()
 
-            long_trades = completed_trades[completed_trades['Type'] == 'Long']
-            short_trades = completed_trades[completed_trades['Type'] == 'Short']
-            print(f"Long Trades: {len(long_trades)}")
-            print(f"Short Trades: {len(short_trades)}")
-            if len(short_trades) > 0:
-                short_win_rate = (short_trades['PnL'] > 0).mean()
-                print(f"Short Win Rate: {short_win_rate*100:.2f}%")
-    else:
-        print("No trades executed.")
+    def print_results(equity, trades, title):
+        print("\n" + "="*40)
+        print(f"RESULTS: {title}")
+        print("="*40)
+        if not equity.empty:
+            cagr, max_dd, calmar, total_ret = calculate_metrics(equity)
+            print(f"Final Equity: {equity.iloc[-1]['權益']:,.2f}")
+            print(f"Total Return: {total_ret*100:.2f}%")
+            print(f"CAGR: {cagr*100:.2f}%")
+            print(f"Max Drawdown: {max_dd*100:.2f}%")
+            print(f"Calmar Ratio: {calmar:.2f}")
+
+            if not trades.empty:
+                comp = trades[trades['Reason'].notna()]
+                print(f"Trades Count: {len(comp)}")
+                if len(comp) > 0:
+                    win_rate = (comp['PnL'] > 0).mean()
+                    print(f"Win Rate: {win_rate*100:.2f}%")
+
+    print_results(equity_l, trades_l, "LONG-ONLY (With Costs)")
+    print_results(equity_ls, trades_ls, "LONG/SHORT (With Costs)")
