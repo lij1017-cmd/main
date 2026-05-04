@@ -49,7 +49,7 @@ def calculate_indicators(prices_df):
 
     return ema200, macd_line, signal_line, macd_hist, volatility, swing_high, swing_low
 
-class PhantomLongOnlyBacktester:
+class PhantomLongShortBacktester:
     def __init__(self, prices, volumes, code_to_name, initial_capital=30000000):
         self.prices_df = prices
         self.volumes_df = volumes
@@ -65,7 +65,7 @@ class PhantomLongOnlyBacktester:
         self.macd_slow = 26
         self.macd_signal = 9
         self.swing_window = 10
-        self.vol_frac = 0.5 # multiplier for volatility tolerance
+        self.vol_frac = 0.5
         self.rr_target = 1.5
 
     def run(self):
@@ -85,9 +85,11 @@ class PhantomLongOnlyBacktester:
         equity_curve = []
         trades_log = []
 
-        # We need to track if a 'break' of support happened recently for the reclaim logic
-        # break_active[asset] = True if price is currently below swing_low
-        break_active = np.zeros(len(self.assets), dtype=bool)
+        # Track if a 'break' of support/resistance happened recently
+        # break_low_active[asset] = True if price is currently below swing_low
+        # break_high_active[asset] = True if price is currently above swing_high
+        break_low_active = np.zeros(len(self.assets), dtype=bool)
+        break_high_active = np.zeros(len(self.assets), dtype=bool)
 
         start_idx = max(self.ema_len, self.macd_slow, 20)
 
@@ -97,12 +99,17 @@ class PhantomLongOnlyBacktester:
             curr_prices = self.prices[i]
 
             # A. Equity Calculation
-            stock_mv = 0.0
+            long_mv = 0.0
+            short_mv = 0.0
             for s_id, info in slots.items():
                 if info:
-                    stock_mv += info['shares'] * curr_prices[info['asset_idx']]
+                    mv = info['shares'] * curr_prices[info['asset_idx']]
+                    if info['type'] == 'Long':
+                        long_mv += mv
+                    else:
+                        short_mv += mv
 
-            total_equity = surplus_pool + stock_mv
+            total_equity = surplus_pool + long_mv - short_mv
             if total_equity > peak_equity: peak_equity = total_equity
             drawdown = (total_equity - peak_equity) / peak_equity if peak_equity != 0 else 0
 
@@ -120,85 +127,113 @@ class PhantomLongOnlyBacktester:
                     exit_triggered = False
                     exit_reason = ""
 
-                    if cp <= info['stop_loss']:
-                        exit_triggered = True
-                        exit_reason = "Stop Loss"
-                    elif cp >= info['take_profit']:
-                        exit_triggered = True
-                        exit_reason = "Take Profit"
+                    if info['type'] == 'Long':
+                        if cp <= info['stop_loss']:
+                            exit_triggered = True
+                            exit_reason = "Stop Loss"
+                        elif cp >= info['take_profit']:
+                            exit_triggered = True
+                            exit_reason = "Take Profit"
+                    else: # Short
+                        if cp >= info['stop_loss']:
+                            exit_triggered = True
+                            exit_reason = "Stop Loss"
+                        elif cp <= info['take_profit']:
+                            exit_triggered = True
+                            exit_reason = "Take Profit"
 
                     if exit_triggered:
                         exit_price = next_prices[a_idx]
                         shares = info['shares']
-                        # Sell Long: receive Cash minus commission (0.1425%) and tax (0.3%)
-                        proceeds = shares * exit_price * (1 - 0.001425 - 0.003)
-                        surplus_pool += proceeds
+                        if info['type'] == 'Long':
+                            # Sell Long: receive Cash minus commission/tax
+                            proceeds = shares * exit_price * (1 - 0.001425 - 0.003)
+                            surplus_pool += proceeds
+                            pnl = proceeds - info['cost']
+                        else:
+                            # Buy to Cover Short: pay Cash plus commission
+                            cost_to_cover = shares * exit_price * (1 + 0.001425)
+                            surplus_pool -= cost_to_cover
+                            pnl = info['cost'] - cost_to_cover
 
                         trades_log.append({
                             'Exit Date': self.dates[i],
                             'Asset': self.assets[a_idx],
-                            'Type': 'Long',
+                            'Type': info['type'],
                             'Entry Price': info['entry_price'],
                             'Exit Price': exit_price,
                             'Reason': exit_reason,
-                            'PnL': proceeds - info['cost']
+                            'PnL': pnl
                         })
                         slots[s_id] = None
 
-            # C. Entry Signals (Long Only)
+            # C. Entry Signals (Long & Short)
             if any(s is None for s in slots.values()):
                 for a in range(len(self.assets)):
                     cp = curr_prices[a]
-                    prev_p = self.prices[i-1, a]
 
-                    # Update break status
-                    # Support is rolling min of previous window
+                    # Support/Resistance from previous window
                     support = swing_low_v[i-1, a]
+                    resistance = swing_high_v[i-1, a]
                     tol = vol_v[i, a] * self.vol_frac
 
+                    # Update break status
                     if cp < support - tol:
-                        break_active[a] = True
+                        break_low_active[a] = True
+                    if cp > resistance + tol:
+                        break_high_active[a] = True
 
                     # Check if already held
                     if any(info and info['asset_idx'] == a for info in slots.values()):
                         continue
 
-                    # MACD Crossover
+                    # MACD Crossovers
                     macd_cross_up = macd_line_v[i, a] > signal_line_v[i, a] and macd_line_v[i-1, a] <= signal_line_v[i-1, a]
+                    macd_cross_down = macd_line_v[i, a] < signal_line_v[i, a] and macd_line_v[i-1, a] >= signal_line_v[i-1, a]
 
                     # Core Filters
                     core_long = macd_cross_up and macd_line_v[i, a] < 0 and cp > ema200_v[i, a]
+                    core_short = macd_cross_down and macd_line_v[i, a] > 0 and cp < ema200_v[i, a]
 
                     if core_long:
-                        # S/R Filter: Reclaim of Support
-                        # If price was recently below support and now closed above it
-                        reclaim = break_active[a] and cp > support
-
+                        reclaim = break_low_active[a] and cp > support
                         if reclaim:
-                            # Entry!
                             stop_loss = support - tol
                             if stop_loss < cp:
-                                surplus_pool = self.enter_trade(slots, surplus_pool, a, i, cp, next_prices[a], stop_loss, trades_log)
-                                break_active[a] = False # Reset break after entry
+                                surplus_pool = self.enter_trade(slots, surplus_pool, a, i, 'Long', cp, next_prices[a], stop_loss, trades_log)
+                                break_low_active[a] = False
+                    elif core_short:
+                        reclaim = break_high_active[a] and cp < resistance
+                        if reclaim:
+                            stop_loss = resistance + tol
+                            if stop_loss > cp:
+                                surplus_pool = self.enter_trade(slots, surplus_pool, a, i, 'Short', cp, next_prices[a], stop_loss, trades_log)
+                                break_high_active[a] = False
 
         return pd.DataFrame(equity_curve), pd.DataFrame(trades_log)
 
-    def enter_trade(self, slots, surplus_pool, a_idx, i, cp, next_p, stop_loss, trades_log):
+    def enter_trade(self, slots, surplus_pool, a_idx, i, t_type, cp, next_p, stop_loss, trades_log):
         for s_id, info in slots.items():
             if info is None:
                 budget_per_slot = 3000000.0
-                if surplus_pool < 1000000: return surplus_pool
 
-                invest_budget = min(surplus_pool, budget_per_slot)
-                # Buy at next bar's price plus commission (0.1425%)
-                shares = (invest_budget // (next_p * 1.001425) // 1000) * 1000
-                if shares <= 0: return surplus_pool
-
-                cost = shares * next_p * 1.001425
-                surplus_pool -= cost
+                if t_type == 'Long':
+                    if surplus_pool < 1000000: return surplus_pool
+                    invest_budget = min(surplus_pool, budget_per_slot)
+                    shares = (invest_budget // (next_p * 1.001425) // 1000) * 1000
+                    if shares <= 0: return surplus_pool
+                    cost = shares * next_p * 1.001425
+                    surplus_pool -= cost
+                else:
+                    # Short: receive proceeds minus commission
+                    # (Note: Margin requirements not strictly modeled, but using budget as proxy)
+                    shares = (budget_per_slot // (next_p * 1.001425) // 1000) * 1000
+                    if shares <= 0: return surplus_pool
+                    cost = shares * next_p * (1 - 0.001425)
+                    surplus_pool += cost
 
                 risk = abs(next_p - stop_loss)
-                take_profit = next_p + self.rr_target * risk
+                take_profit = next_p + self.rr_target * risk if t_type == 'Long' else next_p - self.rr_target * risk
 
                 slots[s_id] = {
                     'asset_idx': a_idx,
@@ -206,13 +241,13 @@ class PhantomLongOnlyBacktester:
                     'entry_price': next_p,
                     'stop_loss': stop_loss,
                     'take_profit': take_profit,
-                    'type': 'Long',
+                    'type': t_type,
                     'cost': cost
                 }
                 trades_log.append({
                     'Entry Date': self.dates[i],
                     'Asset': self.assets[a_idx],
-                    'Type': 'Long',
+                    'Type': t_type,
                     'Entry Price': next_p,
                     'Stop Loss': stop_loss,
                     'Take Profit': take_profit,
@@ -234,11 +269,11 @@ def calculate_metrics(equity_curve_df):
 
 if __name__ == "__main__":
     prices, volumes, code_to_name = clean_data('資料-1.xlsx')
-    bt = PhantomLongOnlyBacktester(prices, volumes, code_to_name)
+    bt = PhantomLongShortBacktester(prices, volumes, code_to_name)
     equity, trades = bt.run()
 
     print("\n" + "="*40)
-    print("BACKTEST RESULTS (Long-Only refined)")
+    print("BACKTEST RESULTS (Long/Short refined)")
     print("="*40)
     if not equity.empty:
         cagr, max_dd, calmar, total_ret = calculate_metrics(equity)
@@ -255,5 +290,13 @@ if __name__ == "__main__":
         if len(completed_trades) > 0:
             win_rate = (completed_trades['PnL'] > 0).mean()
             print(f"Win Rate: {win_rate*100:.2f}%")
+
+            long_trades = completed_trades[completed_trades['Type'] == 'Long']
+            short_trades = completed_trades[completed_trades['Type'] == 'Short']
+            print(f"Long Trades: {len(long_trades)}")
+            print(f"Short Trades: {len(short_trades)}")
+            if len(short_trades) > 0:
+                short_win_rate = (short_trades['PnL'] > 0).mean()
+                print(f"Short Win Rate: {short_win_rate*100:.2f}%")
     else:
         print("No trades executed.")
