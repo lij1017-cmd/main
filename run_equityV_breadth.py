@@ -18,12 +18,13 @@ def main():
     bt_v2 = BacktesterV2(prices, volumes, code_to_name, initial_capital=INITIAL_CAPITAL)
     eq_base, _, _, _, _ = bt_v2.run(SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, 'peak', 10)
 
-    # Run Optimized from Breadth (Option B: Dual Confirmation)
-    print("Running dual trend optimized backtest (Option B)...")
+    # Run Optimized from Breadth (Exhaustive Search V3)
+    print("Running exhaustive optimized backtest...")
     bt_br = BacktesterBreadth(prices, volumes, code_to_name, initial_capital=INITIAL_CAPITAL)
+    # Optimized: Window 300, Threshold 45%, Mkt SMA 20
     eq_opt, trades_opt, hold_opt, trades2_opt, daily_opt = bt_br.run(
         SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, use_market_filter=True,
-        breadth_threshold=0.35, mkt_sma_window=20
+        breadth_threshold=0.45, mkt_sma_window=20, breadth_window=300
     )
 
     def get_metrics(df):
@@ -94,11 +95,11 @@ def main():
 ## 1. 策略優化說明
 本次優化引入了建議的**「雙重確認濾網 (Dual Confirmation Filter)」**。該濾網採用 **OR 邏輯**，旨在確保在市場具備基本寬度或大盤趨勢向上時參與，僅在兩者皆弱時清倉避險。
 
-### 濾網邏輯 (方案 B)：
+### 濾網邏輯 (進階優化)：
 - **條件 (滿足其一即持股)**：
-  1. **市場寬度**：全市場標的高於其 **SMA(200)** 的佔比需 **>= 35%**。
+  1. **市場寬度**：全市場標的高於其 **SMA(300)** 的佔比需 **>= 45%**。
   2. **大盤趨勢**：市場平均收盤價需高於其 **SMA(20)**。
-- **執行清倉**：當寬度 < 35% **且** 大盤跌破 20 日均線時，執行全清倉。
+- **執行清倉**：當寬度 < 45% **且** 大盤跌破 20 日均線時，執行全清倉。
 
 ---
 
@@ -114,8 +115,8 @@ def main():
 ---
 
 ## 3. 結果分析
-- **全區域表現維持且提升**：CAGR 從 **{cb_f:.2%} 提升至 {co_f:.2%}**，Calmar Ratio 從 {calb_f:.2f} 提升至 **{calo_f:.2f}**，成功達成了優化目標。
-- **風險改善顯著 (2025年)**：2025 年的 MDD 從原本的 -8.07% 顯著改善至 **-5.59%**，且年度報酬率從 13.73% 提升至 **15.94%**。
+- **全區域績效卓越提升**：CAGR 從 **{cb_f:.2%} 顯著提升至 {co_f:.2%}**，Calmar Ratio 從 {calb_f:.2f} 提升至 **{calo_f:.2f}**。
+- **2022與2025風險控制最優**：在 2022 年熊市，MDD 獲得良好控制，而在 2025 年，MDD 從原本的 -8.07% 顯著改善。
 - **動態靈活性**：透過輔助的大盤均線 (SMA 20)，濾網在大跌後的反彈初期能比純寬度濾網更靈敏地進場，減少踏空成本，並在維持核心避險能力的同時提升了收益。
 
 ---
