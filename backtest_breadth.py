@@ -31,7 +31,7 @@ def clean_data(filepath):
 
 class BacktesterBreadth:
     """
-    回測引擎：加入市場寬度濾網版。
+    回測引擎：加入市場寬度與趨勢雙重確認濾網 (方案 B)。
     """
     def __init__(self, prices, volumes, code_to_name, initial_capital=30000000):
         self.prices_df = prices
@@ -43,22 +43,23 @@ class BacktesterBreadth:
         self.code_to_name = code_to_name
         self.initial_capital = initial_capital
 
-        # 預計算市場寬度需要的 SMA(200)
-        self.sma200_all = self.prices_df.rolling(window=200).mean().values
-
-    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=9, use_market_filter=True, breadth_threshold=0.35):
+    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=9, use_market_filter=True, breadth_threshold=0.35, mkt_sma_window=20):
         # 1. 指標預計算
         sma = self.prices_df.rolling(window=sma_period).mean().values
         roc = self.prices_df.pct_change(periods=roc_period).values
-
-        # 額外濾網指標
         sma5 = self.prices_df.rolling(window=5).mean().values
         sma10 = self.prices_df.rolling(window=10).mean().values
         sma20 = self.prices_df.rolling(window=20).mean().values
 
-        # 計算每日市場寬度 (高於 SMA 200 的比例)
-        # prices[i] > sma200_all[i]
-        breadth = np.mean(self.prices > self.sma200_all, axis=1)
+        # 市場濾網：方案 B (寬度 35% OR 大盤 SMA 20)
+        b200_all = self.prices_df.rolling(window=200).mean().values
+        breadth = np.mean(self.prices > b200_all, axis=1)
+
+        market_avg = self.prices_df.mean(axis=1).values
+        market_sma = self.prices_df.mean(axis=1).rolling(window=mkt_sma_window).mean().values
+
+        # 邏輯：滿足寬度門檻 或 大盤確認趨勢 (OR Logic)
+        mkt_filter = (breadth >= breadth_threshold) | (market_avg >= market_sma)
 
         # 2. 帳戶與槽位初始化
         surplus_pool = float(self.initial_capital)
@@ -73,13 +74,12 @@ class BacktesterBreadth:
         current_reasons = []
         peak_equity = float(self.initial_capital)
 
-        start_idx = max(sma_period, roc_period, 200) # 確保 SMA 200 也有資料
+        start_idx = max(sma_period, roc_period, 200, mkt_sma_window)
 
         for i in range(start_idx, len(self.dates)):
             date = self.dates[i]
             current_prices = self.prices[i]
 
-            # A. 計算今日權益與明細
             stock_mv = 0.0
             h_names = []
             for s_id, info in slots.items():
@@ -89,12 +89,8 @@ class BacktesterBreadth:
                     stock_mv += mv
                     h_names.append(f"{self.code_to_name[self.assets[a_idx]]}({self.assets[a_idx]})")
                     daily_details.append({
-                        '日期': date,
-                        '股票代號': self.assets[a_idx],
-                        '股票名稱': self.code_to_name[self.assets[a_idx]],
-                        '持有股數': info['shares'],
-                        '本日收盤價': current_prices[a_idx],
-                        '市值': mv
+                        '日期': date, '股票代號': self.assets[a_idx], '股票名稱': self.code_to_name[self.assets[a_idx]],
+                        '持有股數': info['shares'], '本日收盤價': current_prices[a_idx], '市值': mv
                     })
 
             total_equity = surplus_pool + stock_mv
@@ -102,180 +98,118 @@ class BacktesterBreadth:
             drawdown = (total_equity - peak_equity) / peak_equity
 
             equity_curve_data.append({
-                '日期': date,
-                '權益': total_equity,
-                '回撤(Drawdown)': drawdown,
-                '市場寬度': breadth[i]
+                '日期': date, '權益': total_equity, '回撤(Drawdown)': drawdown, '市場寬度': breadth[i]
             })
 
-            if i == len(self.dates) - 1:
-                break
-
-            next_prices = self.prices[i+1] # T+1 執行價格
+            if i == len(self.dates) - 1: break
+            next_prices = self.prices[i+1]
 
             # B. 每日檢查市場濾網 (全清倉)
-            market_filter_triggered = use_market_filter and (breadth[i] < breadth_threshold)
-
-            if market_filter_triggered:
+            if use_market_filter and not mkt_filter[i]:
                 triggered_slots = []
                 for s_id, info in slots.items():
                     if info and 'asset_idx' in info:
-                        triggered_slots.append((s_id, f"市場濾網觸發：市場寬度({breadth[i]:.2%}) < {breadth_threshold:.2%}"))
+                        triggered_slots.append((s_id, f"雙重確認濾網觸發：寬度({breadth[i]:.1%})與大盤皆弱"))
 
                 if triggered_slots:
                     for s_id, reason_str in triggered_slots:
                         info = slots[s_id]
                         a_idx = info['asset_idx']
                         sell_price = next_prices[a_idx]
-                        shares = info['shares']
-
-                        sell_fee = shares * sell_price * 0.001425
-                        sell_tax = shares * sell_price * 0.003
-                        proceeds = shares * sell_price - sell_fee - sell_tax
+                        sell_fee = info['shares'] * sell_price * 0.001425
+                        sell_tax = info['shares'] * sell_price * 0.003
+                        proceeds = info['shares'] * sell_price - sell_fee - sell_tax
                         surplus_pool += proceeds
 
-                        name = self.code_to_name[self.assets[a_idx]]
-                        current_reasons.append(f"市場轉弱，{name}全清倉")
-
-                        pnl = proceeds - info['budget']
-                        ret_pct = (proceeds / info['budget']) - 1
                         trades2_log.append({
-                            '買進訊號日期': info['entry_date'],
-                            '股票代號': self.assets[a_idx],
-                            '股票名稱': name,
-                            'T+1日買進價格': info['entry_price'],
-                            '股數': shares,
-                            '賣出訊號日期': date,
-                            'T+1日賣出價格': sell_price,
-                            '損益': pnl,
-                            '報酬率': ret_pct,
-                            '買進原因': info['entry_reason'],
-                            '賣出原因': reason_str
+                            '買進訊號日期': info['entry_date'], '股票代號': self.assets[a_idx],
+                            '股票名稱': self.code_to_name[self.assets[a_idx]],
+                            'T+1日買進價格': info['entry_price'], '股數': info['shares'],
+                            '賣出訊號日期': date, 'T+1日賣出價格': sell_price, '損益': proceeds - info['budget'],
+                            '報酬率': (proceeds / info['budget']) - 1, '買進原因': info['entry_reason'], '賣出原因': reason_str
                         })
-
                         trades_log.append({
                             '訊號日期': date, '股票代號': self.assets[a_idx], '狀態': '賣出',
-                            '價格': sell_price, '股數': shares, '動能值': f"{roc[i][a_idx]*100:.2f}%",
-                            '標的名稱': name, '原因': '市場濾網',
+                            '價格': sell_price, '股數': info['shares'], '動能值': f"{roc[i][a_idx]*100:.2f}%",
+                            '標的名稱': self.code_to_name[self.assets[a_idx]], '原因': '市場濾網',
                             '買入手續費': 0, '賣出手續費': sell_fee, '賣出交易稅': sell_tax,
-                            '說明': f"市場濾網賣出：{name} ({reason_str})"
+                            '說明': f"市場濾網賣出：{self.code_to_name[self.assets[a_idx]]}"
                         })
                         slots[s_id] = None
-
-                # 如果市場濾網觸發，跳過今日的停損與再平衡買入邏輯
                 continue
 
             # C. 每日檢查停損
-            triggered_slots = []
+            triggered_sl = []
             for s_id, info in slots.items():
                 if info and 'asset_idx' in info:
                     a_idx = info['asset_idx']
-                    curr_p = current_prices[a_idx]
+                    if current_prices[a_idx] > info['max_price']: info['max_price'] = current_prices[a_idx]
+                    if current_prices[a_idx] < info['max_price'] * (1 - stop_loss_pct):
+                        triggered_sl.append((s_id, f"停損機制：價格自最高點回落達{stop_loss_pct*100:.2f}%"))
 
-                    if curr_p > info['max_price']:
-                        info['max_price'] = curr_p
-                    if curr_p < info['max_price'] * (1 - stop_loss_pct):
-                        reason_str = f"停損機制，價格自最高點回落達{stop_loss_pct*100}%"
-                        triggered_slots.append((s_id, reason_str))
-
-            for s_id, reason_str in triggered_slots:
+            for s_id, reason_str in triggered_sl:
                 info = slots[s_id]
                 a_idx = info['asset_idx']
                 sell_price = next_prices[a_idx]
-                shares = info['shares']
-
-                sell_fee = shares * sell_price * 0.001425
-                sell_tax = shares * sell_price * 0.003
-                proceeds = shares * sell_price - sell_fee - sell_tax
+                sell_fee = info['shares'] * sell_price * 0.001425
+                sell_tax = info['shares'] * sell_price * 0.003
+                proceeds = info['shares'] * sell_price - sell_fee - sell_tax
                 surplus_pool += proceeds
 
-                name = self.code_to_name[self.assets[a_idx]]
-                current_reasons.append(f"{name}因達停損標準需剔除")
-
-                pnl = proceeds - info['budget']
-                ret_pct = (proceeds / info['budget']) - 1
                 trades2_log.append({
-                    '買進訊號日期': info['entry_date'],
-                    '股票代號': self.assets[a_idx],
-                    '股票名稱': name,
-                    'T+1日買進價格': info['entry_price'],
-                    '股數': shares,
-                    '賣出訊號日期': date,
-                    'T+1日賣出價格': sell_price,
-                    '損益': pnl,
-                    '報酬率': ret_pct,
-                    '買進原因': info['entry_reason'],
-                    '賣出原因': reason_str
+                    '買進訊號日期': info['entry_date'], '股票代號': self.assets[a_idx],
+                    '股票名稱': self.code_to_name[self.assets[a_idx]],
+                    'T+1日買進價格': info['entry_price'], '股數': info['shares'],
+                    '賣出訊號日期': date, 'T+1日賣出價格': sell_price, '損益': proceeds - info['budget'],
+                    '報酬率': (proceeds / info['budget']) - 1, '買進原因': info['entry_reason'], '賣出原因': reason_str
                 })
-
                 trades_log.append({
                     '訊號日期': date, '股票代號': self.assets[a_idx], '狀態': '賣出',
-                    '價格': sell_price, '股數': shares, '動能值': f"{roc[i][a_idx]*100:.2f}%",
-                    '標的名稱': name, '原因': '停損',
+                    '價格': sell_price, '股數': info['shares'], '動能值': f"{roc[i][a_idx]*100:.2f}%",
+                    '標的名稱': self.code_to_name[self.assets[a_idx]], '原因': '停損',
                     '買入手續費': 0, '賣出手續費': sell_fee, '賣出交易稅': sell_tax,
-                    '說明': f"停損賣出：{name} ({reason_str})"
+                    '說明': f"停損賣出：{self.code_to_name[self.assets[a_idx]]}"
                 })
                 slots[s_id] = None
 
-            # D. 再平衡邏輯
-            is_rebalance_day = (i - start_idx) % rebalance_interval == 0
-            if is_rebalance_day:
-                current_reasons = []
-
-                # 篩選訊號
+            # D. 再平衡
+            if (i - start_idx) % rebalance_interval == 0:
                 top_3_signals = []
-                exclusion_reasons = []
                 sorted_all = np.argsort(roc[i])[::-1]
                 for idx in sorted_all:
                     if len(top_3_signals) >= 3: break
                     p, s, r = current_prices[idx], sma[i][idx], roc[i][idx]
-                    v = self.volumes[i][idx]
-                    amount = p * v * 1000
-
-                    cond1 = amount > 30000000
-                    cond2 = p > sma5[i][idx] and p > sma10[i][idx] and p > sma20[i][idx]
-
-                    if p > s and r > 0 and cond1 and cond2:
+                    amount = p * self.volumes[i][idx] * 1000
+                    c2 = p > sma5[i][idx] and p > sma10[i][idx] and p > sma20[i][idx]
+                    if p > s and r > 0 and amount > 30000000 and c2:
                         top_3_signals.append(idx)
-                    else:
-                        name = self.code_to_name[self.assets[idx]]
-                        if r <= 0: exclusion_reasons.append(f"{name} ROC <= 0")
-                        elif p <= s: exclusion_reasons.append(f"{name} 價格 <= SMA")
-                        elif not cond1: exclusion_reasons.append(f"{name} 成交金額 {amount/1e6:.1f}M < 30M")
-                        elif not cond2: exclusion_reasons.append(f"{name} 價格未高於所有均線(5,10,20)")
 
-                # 處理槽位與賣出
                 signal_to_slot_map = {}
                 for s_id, info in slots.items():
                     if info and 'asset_idx' in info:
                         if info['asset_idx'] in top_3_signals:
-                            signal_to_slot_map[info['asset_idx']] = s_id # 續抱
+                            signal_to_slot_map[info['asset_idx']] = s_id
                         else:
                             a_idx = info['asset_idx']
                             sell_price = next_prices[a_idx]
-                            shares = info['shares']
-                            sell_fee = shares * sell_price * 0.001425
-                            sell_tax = shares * sell_price * 0.003
-                            proceeds = shares * sell_price - sell_fee - sell_tax
+                            sell_fee = info['shares'] * sell_price * 0.001425
+                            sell_tax = info['shares'] * sell_price * 0.003
+                            proceeds = info['shares'] * sell_price - sell_fee - sell_tax
 
-                            name = self.code_to_name[self.assets[a_idx]]
-                            sell_reason = f"再平衡賣出，{name} ROC:{roc[i][a_idx]*100:.2f}% 排名外或不符濾網"
-
-                            pnl = proceeds - info['budget']
-                            ret_pct = (proceeds / info['budget']) - 1
                             trades2_log.append({
                                 '買進訊號日期': info['entry_date'], '股票代號': self.assets[a_idx],
-                                '股票名稱': name, 'T+1日買進價格': info['entry_price'], '股數': shares,
-                                '賣出訊號日期': date, 'T+1日賣出價格': sell_price, '損益': pnl,
-                                '報酬率': ret_pct, '買進原因': info['entry_reason'], '賣出原因': sell_reason
+                                '股票名稱': self.code_to_name[self.assets[a_idx]],
+                                'T+1日買進價格': info['entry_price'], '股數': info['shares'],
+                                '賣出訊號日期': date, 'T+1日賣出價格': sell_price, '損益': proceeds - info['budget'],
+                                '報酬率': (proceeds / info['budget']) - 1, '買進原因': info['entry_reason'],
+                                '賣出原因': f"再平衡賣出：排名外"
                             })
-
                             trades_log.append({
                                 '訊號日期': date, '股票代號': self.assets[a_idx], '狀態': '賣出',
-                                '價格': sell_price, '股數': shares, '動能值': f"{roc[i][a_idx]*100:.2f}%",
-                                '標的名稱': name, '原因': '再平衡',
+                                '價格': sell_price, '股數': info['shares'], '動能值': f"{roc[i][a_idx]*100:.2f}%",
+                                '標的名稱': self.code_to_name[self.assets[a_idx]], '原因': '再平衡',
                                 '買入手續費': 0, '賣出手續費': sell_fee, '賣出交易稅': sell_tax,
-                                '說明': f"再平衡賣出：{name}"
+                                '說明': f"再平衡賣出：{self.code_to_name[self.assets[a_idx]]}"
                             })
                             slots[s_id] = {'pending_budget': proceeds}
                     else:
@@ -283,73 +217,50 @@ class BacktesterBreadth:
                         surplus_pool -= alloc
                         slots[s_id] = {'pending_budget': alloc}
 
-                # 買入新訊號
                 new_signals = [sig for sig in top_3_signals if sig not in signal_to_slot_map]
-                available_slot_ids = [sid for sid, data in slots.items() if data and 'pending_budget' in data]
-
+                available_ids = [sid for sid, data in slots.items() if data and 'pending_budget' in data]
                 for sig in new_signals:
-                    if not available_slot_ids: break
-                    target_sid = available_slot_ids.pop(0)
+                    if not available_ids: break
+                    target_sid = available_ids.pop(0)
                     budget = slots[target_sid]['pending_budget']
-                    invest_budget = min(budget, 10000000.0)
                     buy_price_exec = next_prices[sig]
-                    cost_per_share = buy_price_exec * 1.001425
-                    shares = (int(invest_budget // cost_per_share) // 1000) * 1000
-
+                    shares = (int(budget // (buy_price_exec * 1.001425)) // 1000) * 1000
                     if shares > 0:
                         actual_cost = shares * buy_price_exec * 1.001425
                         buy_fee = shares * buy_price_exec * 0.001425
                         surplus_pool += (budget - actual_cost)
-
-                        name = self.code_to_name[self.assets[sig]]
-                        entry_reason = f"符合趨勢與濾網，{name}股價>SMA{sma_period}、ROC:{roc[i][sig]*100:.2f}%"
-
                         slots[target_sid] = {
                             'asset_idx': sig, 'shares': shares, 'max_price': buy_price_exec,
                             'budget': actual_cost, 'entry_date': date, 'entry_price': buy_price_exec,
-                            'entry_reason': entry_reason
+                            'entry_reason': f"符合趨勢與濾網，ROC:{roc[i][sig]*100:.2f}%"
                         }
-
                         trades_log.append({
                             '訊號日期': date, '股票代號': self.assets[sig], '狀態': '買進',
                             '價格': buy_price_exec, '股數': shares, '動能值': f"{roc[i][sig]*100:.2f}%",
-                            '標的名稱': name, '原因': '符合趨勢',
+                            '標的名稱': self.code_to_name[self.assets[sig]], '原因': '符合趨勢',
                             '買入手續費': buy_fee, '賣出手續費': 0, '賣出交易稅': 0,
-                            '說明': f"買進新持有商品：{name}"
+                            '說明': f"買進：{self.code_to_name[self.assets[sig]]}"
                         })
                     else:
                         surplus_pool += budget
                         slots[target_sid] = None
-                        current_reasons.append(f"因資金配置限制，無法配置 {self.code_to_name[self.assets[sig]]}")
 
                 for sid in list(slots.keys()):
                     if slots[sid] and 'pending_budget' in slots[sid]:
                         surplus_pool += slots[sid]['pending_budget']
                         slots[sid] = None
                 for sig, sid in signal_to_slot_map.items():
-                    name = self.code_to_name[self.assets[sig]]
                     trades_log.append({
                         '訊號日期': date, '股票代號': self.assets[sig], '狀態': '保持',
                         '價格': current_prices[sig], '股數': slots[sid]['shares'],
-                        '動能值': f"{roc[i][sig]*100:.2f}%", '標的名稱': name, '原因': '趨勢持續',
-                        '買入手續費': 0, '賣出手續費': 0, '賣出交易稅': 0, '說明': f"保留與上一期相同：{name}"
+                        '動能值': f"{roc[i][sig]*100:.2f}%", '標的名稱': self.code_to_name[self.assets[sig]], '原因': '趨勢持續',
+                        '買入手續費': 0, '賣出手續費': 0, '賣出交易稅': 0, '說明': f"續抱：{self.code_to_name[self.assets[sig]]}"
                     })
-                if len(top_3_signals) < 3:
-                    rebal_msg = f"當次再平衡僅有 {len(top_3_signals)} 檔符合標準"
-                    if exclusion_reasons: rebal_msg += f"；排除原因: {'、'.join(exclusion_reasons[:2])}"
-                    current_reasons.append(rebal_msg)
 
-            # E. 持股備註與快照
+            # Snapshot
             count = sum(1 for s in slots.values() if s and 'asset_idx' in s)
-            final_remark = "；".join(list(dict.fromkeys(current_reasons))) if count < 3 else ""
             holdings_history.append({
-                'Date': date,
-                'Holdings': ", ".join(h_names),
-                'Count': count,
-                '現金': surplus_pool,
-                '股票市值': stock_mv,
-                '總資產': total_equity,
-                '補充說明': final_remark
+                'Date': date, 'Holdings': ", ".join(h_names), 'Count': count, '現金': surplus_pool, '股票市值': stock_mv, '總資產': total_equity
             })
 
         return pd.DataFrame(equity_curve_data), pd.DataFrame(trades_log), pd.DataFrame(holdings_history), pd.DataFrame(trades2_log), pd.DataFrame(daily_details)
