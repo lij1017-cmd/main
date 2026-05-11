@@ -43,7 +43,7 @@ class BacktesterBreadth:
         self.code_to_name = code_to_name
         self.initial_capital = initial_capital
 
-    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=9, use_market_filter=True, breadth_threshold=0.35, mkt_sma_window=20):
+    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=9, use_market_filter=True, breadth_threshold=0.35, mkt_sma_window=20, breadth_window=200):
         # 1. 指標預計算
         sma = self.prices_df.rolling(window=sma_period).mean().values
         roc = self.prices_df.pct_change(periods=roc_period).values
@@ -51,9 +51,9 @@ class BacktesterBreadth:
         sma10 = self.prices_df.rolling(window=10).mean().values
         sma20 = self.prices_df.rolling(window=20).mean().values
 
-        # 市場濾網：方案 B (寬度 35% OR 大盤 SMA 20)
-        b200_all = self.prices_df.rolling(window=200).mean().values
-        breadth = np.mean(self.prices > b200_all, axis=1)
+        # 市場濾網：雙重確認 (寬度 OR 大盤 SMA)
+        breadth_sma_all = self.prices_df.rolling(window=breadth_window).mean().values
+        breadth = np.mean(self.prices > breadth_sma_all, axis=1)
 
         market_avg = self.prices_df.mean(axis=1).values
         market_sma = self.prices_df.mean(axis=1).rolling(window=mkt_sma_window).mean().values
@@ -74,7 +74,7 @@ class BacktesterBreadth:
         current_reasons = []
         peak_equity = float(self.initial_capital)
 
-        start_idx = max(sma_period, roc_period, 200, mkt_sma_window)
+        start_idx = max(sma_period, roc_period, breadth_window, mkt_sma_window)
 
         for i in range(start_idx, len(self.dates)):
             date = self.dates[i]
