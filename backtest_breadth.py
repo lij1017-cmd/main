@@ -46,7 +46,7 @@ class BacktesterBreadth:
         # 預計算市場寬度需要的 SMA(200)
         self.sma200_all = self.prices_df.rolling(window=200).mean().values
 
-    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=9, use_market_filter=True):
+    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=9, use_market_filter=True, breadth_threshold=0.35):
         # 1. 指標預計算
         sma = self.prices_df.rolling(window=sma_period).mean().values
         roc = self.prices_df.pct_change(periods=roc_period).values
@@ -114,13 +114,13 @@ class BacktesterBreadth:
             next_prices = self.prices[i+1] # T+1 執行價格
 
             # B. 每日檢查市場濾網 (全清倉)
-            market_filter_triggered = use_market_filter and (breadth[i] < 0.35)
+            market_filter_triggered = use_market_filter and (breadth[i] < breadth_threshold)
 
             if market_filter_triggered:
                 triggered_slots = []
                 for s_id, info in slots.items():
                     if info and 'asset_idx' in info:
-                        triggered_slots.append((s_id, f"市場濾網觸發：市場寬度({breadth[i]:.2%}) < 35%"))
+                        triggered_slots.append((s_id, f"市場濾網觸發：市場寬度({breadth[i]:.2%}) < {breadth_threshold:.2%}"))
 
                 if triggered_slots:
                     for s_id, reason_str in triggered_slots:

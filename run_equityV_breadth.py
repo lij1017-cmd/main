@@ -23,8 +23,10 @@ def main():
     )
 
     print("Running optimized backtest (with breadth filter)...")
+    # Optimized threshold found via optimize_breadth.py: 15%
+    OPTIMIZED_THRESHOLD = 0.15
     eq_opt, trades_opt, hold_opt, trades2_opt, daily_opt = bt.run(
-        SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, use_market_filter=True
+        SMA_PERIOD, ROC_PERIOD, STOP_LOSS_PCT, REBALANCE, use_market_filter=True, breadth_threshold=OPTIMIZED_THRESHOLD
     )
 
     # 計算各年度績效
@@ -107,8 +109,8 @@ def main():
 
 ### 市場寬度濾網規則：
 - **定義**：計算全市場 131 檔標的中，收盤價高於其各自 SMA(200) 的標的佔比。
-- **觸發條件**：當市場寬度 **< 35%** 時，視為市場環境轉弱。
-- **執行動作**：觸發時進行**全清倉行為**，且在寬度恢復至 35% 以上前不持有任何股票。
+- **觸發條件**：當市場寬度 **< 15%** 時（經優化搜尋後選定），視為市場環境轉弱。
+- **執行動作**：觸發時進行**全清倉行為**，且在寬度恢復至 15% 以上前不持有任何股票。
 
 ---
 
@@ -124,7 +126,7 @@ def main():
 ---
 
 ## 3. 結果分析
-透過加入市場寬度濾網，策略在市場系統性風險較高（寬度低於 35%）的時期能及時空倉避險。
+透過加入市場寬度濾網，策略在市場系統性風險較高（寬度低於 15%）的時期能及時空倉避險。
 
 ---
 
