@@ -29,9 +29,9 @@ def clean_data(filepath):
 
     return prices, volumes, code_to_name
 
-class BacktesterBreadth:
+class BacktesterBreadth2:
     """
-    回測引擎：加入市場寬度與趨勢雙重確認濾網 (方案 B)。
+    回測引擎：加入市場寬度與趨勢雙重確認濾網 (方案 B 最終優化版)。
     """
     def __init__(self, prices, volumes, code_to_name, initial_capital=30000000):
         self.prices_df = prices
@@ -43,7 +43,7 @@ class BacktesterBreadth:
         self.code_to_name = code_to_name
         self.initial_capital = initial_capital
 
-    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=9, use_market_filter=True, breadth_threshold=0.35, mkt_sma_window=20, breadth_window=200):
+    def run(self, sma_period, roc_period, stop_loss_pct, rebalance_interval=9, use_market_filter=True, breadth_threshold=0.45, mkt_sma_window=20, breadth_window=300):
         # 1. 指標預計算
         sma = self.prices_df.rolling(window=sma_period).mean().values
         roc = self.prices_df.pct_change(periods=roc_period).values
@@ -58,7 +58,7 @@ class BacktesterBreadth:
         market_avg = self.prices_df.mean(axis=1).values
         market_sma = self.prices_df.mean(axis=1).rolling(window=mkt_sma_window).mean().values
 
-        # 邏輯：滿足寬度門檻 或 大盤確認趨勢 (OR Logic)
+        # 邏輯：寬度大於門檻 或 大盤確認趨勢 (OR Logic)
         mkt_filter = (breadth >= breadth_threshold) | (market_avg >= market_sma)
 
         # 2. 帳戶與槽位初始化
