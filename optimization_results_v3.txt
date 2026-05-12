@@ -1,1 +1,0 @@
-No candidates found meeting MDD <= 25%.
