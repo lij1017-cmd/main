@@ -249,10 +249,13 @@ class BacktesterAdjusted:
                     invest_budget = self.slot_budget # 固定 400 萬
                     buy_price_exec = next_prices[sig]
                     cost_per_share = buy_price_exec * 1.001425
-                    shares = int(invest_budget // cost_per_share)
+                    max_shares = int(invest_budget // cost_per_share)
 
                     remark = ""
-                    if shares < 1000:
+                    if max_shares >= 1000:
+                        shares = (max_shares // 1000) * 1000
+                    else:
+                        shares = max_shares
                         remark = "無法滿足1000股"
 
                     actual_cost = shares * buy_price_exec * 1.001425
