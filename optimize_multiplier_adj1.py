@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from backtest_vol import BacktesterVol, calculate_metrics, clean_data
+from backtest_vol import BacktesterVol, calculate_metrics_dual, clean_data
 import os
 
 def main():
@@ -11,7 +11,10 @@ def main():
 
     print("Loading data...")
     prices, volumes, code_to_name = clean_data(filepath)
-    bt = BacktesterVol(prices, volumes, code_to_name)
+    # 使用 30M 交易資金與 150M 授權資金
+    TRADING_CAP = 30000000
+    AUTH_CAP = 150000000
+    bt = BacktesterVol(prices, volumes, code_to_name, trading_capital=TRADING_CAP, authorized_capital=AUTH_CAP)
 
     # 固定參數
     SMA_PERIOD = 303
@@ -27,7 +30,8 @@ def main():
 
     results = []
 
-    multipliers = np.arange(1.5, 3.7, 0.2) # 1.5, 1.7, ..., 3.5
+    # 使用 0.2 步長
+    multipliers = np.arange(1.5, 3.7, 0.2)
 
     print(f"Starting Grid Search for Multiplier on Training Set ({TRAIN_START} to {TRAIN_END})...")
 
@@ -47,21 +51,20 @@ def main():
             end_date=TRAIN_END
         )
 
-        cagr, mdd, fmdd, calmar, total_ret = calculate_metrics(eq_curve)
+        metrics = calculate_metrics_dual(eq_curve, TRADING_CAP, AUTH_CAP)
         results.append({
             'Multiplier': m,
-            'CAGR': cagr,
-            'MaxDD': mdd,
-            'Calmar': calmar,
-            'TotalReturn': total_ret
+            'Trading_CAGR': metrics['Trading CAGR'],
+            'Auth_CAGR': metrics['Authorized CAGR'],
+            'Std_MaxDD': metrics['Standard MaxDD'],
+            'Fixed_MaxDD': metrics['Fixed Base MaxDD'],
+            'Calmar': metrics['Trading Calmar']
         })
 
     results_df = pd.DataFrame(results)
-    print("\nGrid Search Results (Training Set 2019-2023):")
+    results_df.to_csv('multiplier_plateau_adj1.csv', index=False)
+    print("\nResults saved to multiplier_plateau_adj1.csv")
     print(results_df.to_string(index=False))
-
-    results_df.to_csv('vol_multiplier_grid_search.csv', index=False)
-    print("\nResults saved to vol_multiplier_grid_search.csv")
 
 if __name__ == "__main__":
     main()

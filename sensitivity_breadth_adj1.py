@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from backtest_vol import BacktesterVol, calculate_metrics, clean_data
+from backtest_vol import BacktesterVol, calculate_metrics_dual, clean_data
 import os
 
 def main():
@@ -11,7 +11,9 @@ def main():
 
     print("Loading data...")
     prices, volumes, code_to_name = clean_data(filepath)
-    bt = BacktesterVol(prices, volumes, code_to_name)
+    TRADING_CAP = 30000000
+    AUTH_CAP = 150000000
+    bt = BacktesterVol(prices, volumes, code_to_name, trading_capital=TRADING_CAP, authorized_capital=AUTH_CAP)
 
     # 固定參數
     SMA_PERIOD = 303
@@ -27,9 +29,10 @@ def main():
 
     results = []
 
-    windows = range(180, 410, 10)
+    # 測試指定區間
+    windows = [200, 240, 290, 350]
 
-    print(f"Starting Broad Grid Search for Breadth Window on Training Set ({TRAIN_START} to {TRAIN_END})...")
+    print(f"Starting Sensitivity Analysis for Breadth Window ({TRAIN_START} to {TRAIN_END})...")
 
     for bw in windows:
         print(f"Testing Breadth Window: {bw}")
@@ -46,18 +49,20 @@ def main():
             end_date=TRAIN_END
         )
 
-        cagr, mdd, fmdd, calmar, total_ret = calculate_metrics(eq_curve)
+        metrics = calculate_metrics_dual(eq_curve, TRADING_CAP, AUTH_CAP)
         results.append({
             'BreadthWindow': bw,
-            'CAGR': cagr,
-            'MaxDD': mdd,
-            'Calmar': calmar,
-            'TotalReturn': total_ret
+            'Trading_CAGR': metrics['Trading CAGR'],
+            'Auth_CAGR': metrics['Authorized CAGR'],
+            'Std_MaxDD': metrics['Standard MaxDD'],
+            'Fixed_MaxDD': metrics['Fixed Base MaxDD'],
+            'Calmar': metrics['Trading Calmar']
         })
 
     results_df = pd.DataFrame(results)
-    results_df.to_csv('breadth_plateau.csv', index=False)
-    print("\nResults saved to breadth_plateau.csv")
+    results_df.to_csv('breadth_sensitivity_adj1.csv', index=False)
+    print("\nResults saved to breadth_sensitivity_adj1.csv")
+    print(results_df.to_string(index=False))
 
 if __name__ == "__main__":
     main()
