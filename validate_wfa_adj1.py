@@ -14,9 +14,9 @@ def main():
     AUTH_CAP = 150000000
     bt = BacktesterVol(prices, volumes, code_to_name, trading_capital=TRADING_CAP, authorized_capital=AUTH_CAP)
 
-    # 選定的最優/穩健參數 (v2 更新)
+    # 選定的最優/穩健參數 (v2 穩定性優化)
     SMA_PERIOD = 303
-    ROC_PERIOD = 14
+    ROC_PERIOD = 10
     REBALANCE = 9
     VOL_PERIOD = 15
     VOL_MULTIPLIER = 2.7
