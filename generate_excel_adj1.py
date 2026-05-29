@@ -12,7 +12,7 @@ def main():
 
     # 參數設定
     SMA_PERIOD = 303
-    ROC_PERIOD = 10
+    ROC_PERIOD = 14
     REBALANCE = 9
     VOL_PERIOD = 15
     VOL_MULTIPLIER = 2.7
