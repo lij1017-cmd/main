@@ -53,7 +53,7 @@ class BacktesterVol:
             vol_period=15, vol_multiplier=2.7,
             rebalance_interval=9, use_market_filter=True,
             breadth_threshold=0.42, mkt_sma_window=14, breadth_window=290,
-            start_date=None, end_date=None):
+            start_date=None, end_date=None, use_breadth_weight=True):
 
         # 1. 指標預計算
         sma = self.prices_df.rolling(window=sma_period).mean().values
@@ -200,8 +200,13 @@ class BacktesterVol:
                             reason_str = f"固定停損：價格自最高點回落達{stop_loss_val*100:.2f}%"
                     elif stop_loss_type == 'vol':
                         current_vol = vol[i][a_idx]
+                        # 寬度權衡增強：當市場寬度低於門檻時，縮緊停損 (Multiplier * 0.8)
+                        effective_mult = vol_multiplier
+                        if use_breadth_weight and breadth[i] < breadth_threshold:
+                            effective_mult = vol_multiplier * 0.8
+
                         # 使用使用者建議公式
-                        stop_price = info['max_price'] * (1 - vol_multiplier * current_vol)
+                        stop_price = info['max_price'] * (1 - effective_mult * current_vol)
                         if current_prices[a_idx] < stop_price:
                             exit_triggered = True
                             reason_str = f"Vol 停損：價格({current_prices[a_idx]:.2f})低於停損價({stop_price:.2f}, Vol倍數={vol_multiplier})"

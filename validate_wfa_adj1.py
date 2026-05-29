@@ -14,9 +14,9 @@ def main():
     AUTH_CAP = 150000000
     bt = BacktesterVol(prices, volumes, code_to_name, trading_capital=TRADING_CAP, authorized_capital=AUTH_CAP)
 
-    # 選定的最優/穩健參數
+    # 選定的最優/穩健參數 (v2 更新)
     SMA_PERIOD = 303
-    ROC_PERIOD = 10
+    ROC_PERIOD = 14
     REBALANCE = 9
     VOL_PERIOD = 15
     VOL_MULTIPLIER = 2.7
@@ -44,7 +44,8 @@ def main():
             mkt_sma_window=MKT_SMA,
             breadth_window=BREADTH_WINDOW,
             start_date=start,
-            end_date=end
+            end_date=end,
+            use_breadth_weight=True
         )
 
         metrics = calculate_metrics_dual(eq_curve, TRADING_CAP, AUTH_CAP)
@@ -79,7 +80,11 @@ def main():
     wfa_results = []
     for start, end in wfa_periods:
         print(f"Running WFA Period: {start} to {end}")
-        eq_curve, _, _, _ = bt.run(SMA_PERIOD, ROC_PERIOD, start_date=start, end_date=end)
+        eq_curve, _, _, _ = bt.run(
+            SMA_PERIOD, ROC_PERIOD,
+            vol_multiplier=VOL_MULTIPLIER, breadth_window=BREADTH_WINDOW,
+            start_date=start, end_date=end, use_breadth_weight=True
+        )
         metrics = calculate_metrics_dual(eq_curve, TRADING_CAP, AUTH_CAP)
         wfa_results.append({
             'Period': f"{start} - {end}",
