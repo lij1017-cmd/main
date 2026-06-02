@@ -10,9 +10,6 @@ def export_to_excel(equity_df, trades_df, trades2_df, daily_df, metrics, filenam
         trades_df.to_excel(writer, sheet_name='Trades', index=False)
         trades2_df.to_excel(writer, sheet_name='Trades2', index=False)
         equity_df.to_excel(writer, sheet_name='Equity_Curve', index=False)
-        # Equity_Hold placeholder (current holdings)
-        # In this simple backtest, we don't track historical hold snapshots every day in a separate sheet usually,
-        # but we can provide the last day's slots.
 
         daily_df.to_excel(writer, sheet_name='Daily', index=False)
 
