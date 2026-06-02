@@ -1,7 +1,7 @@
 
 import pandas as pd
 import numpy as np
-from backtest_adj3 import BacktesterVol, clean_data, calculate_metrics_dual
+from backtest_adj4 import BacktesterVol, clean_data, calculate_metrics_dual
 import json
 import xlsxwriter
 
@@ -84,8 +84,8 @@ def run_analysis():
 
             # Export Scenario C (Standard) as requested
             if s_name == 'Scenario C' and c_name == 'Standard':
-                print(f"Exporting Scenario C (Standard) to equityV-adj3.xlsx...")
-                export_to_excel(equity_curve, trades, trades2, daily, metrics, 'equityV-adj3.xlsx')
+                print(f"Exporting Scenario C (Standard) to equityV-adj4.xlsx...")
+                export_to_excel(equity_curve, trades, trades2, daily, metrics, 'equityV-adj4.xlsx')
 
     with open('analysis_results.json', 'w') as f:
         json.dump(results, f, indent=4)
