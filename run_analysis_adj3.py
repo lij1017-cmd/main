@@ -1,7 +1,7 @@
 
 import pandas as pd
 import numpy as np
-from backtest_adj2 import BacktesterVol, clean_data, calculate_metrics_dual
+from backtest_adj3 import BacktesterVol, clean_data, calculate_metrics_dual
 import json
 import xlsxwriter
 
@@ -10,9 +10,6 @@ def export_to_excel(equity_df, trades_df, trades2_df, daily_df, metrics, filenam
         trades_df.to_excel(writer, sheet_name='Trades', index=False)
         trades2_df.to_excel(writer, sheet_name='Trades2', index=False)
         equity_df.to_excel(writer, sheet_name='Equity_Curve', index=False)
-        # Equity_Hold placeholder (current holdings)
-        # In this simple backtest, we don't track historical hold snapshots every day in a separate sheet usually,
-        # but we can provide the last day's slots.
 
         daily_df.to_excel(writer, sheet_name='Daily', index=False)
 
@@ -87,8 +84,8 @@ def run_analysis():
 
             # Export Scenario C (Standard) as requested
             if s_name == 'Scenario C' and c_name == 'Standard':
-                print(f"Exporting Scenario C (Standard) to equityV-adj2.xlsx...")
-                export_to_excel(equity_curve, trades, trades2, daily, metrics, 'equityV-adj2.xlsx')
+                print(f"Exporting Scenario C (Standard) to equityV-adj3.xlsx...")
+                export_to_excel(equity_curve, trades, trades2, daily, metrics, 'equityV-adj3.xlsx')
 
     with open('analysis_results.json', 'w') as f:
         json.dump(results, f, indent=4)
