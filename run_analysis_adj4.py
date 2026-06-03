@@ -2,75 +2,68 @@
 import pandas as pd
 import numpy as np
 from backtest_adj4 import BacktesterVol, clean_data, calculate_metrics_dual
-import json
 import xlsxwriter
+import json
 
-def export_to_excel(equity_df, trades_df, trades2_df, daily_df, metrics, filename):
+def export_to_excel_final(equity_df, trades_df, trades2_df, daily_df, metrics, filename):
     with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
         trades_df.to_excel(writer, sheet_name='Trades', index=False)
         trades2_df.to_excel(writer, sheet_name='Trades2', index=False)
         equity_df.to_excel(writer, sheet_name='Equity_Curve', index=False)
         daily_df.to_excel(writer, sheet_name='Daily', index=False)
 
+        # Summary Sheet
         summary_data = [
-            ['指標', '數值'],
+            ['策略指標 (全期間)', '數值'],
             ['Trading CAGR (30M)', f"{metrics['Trading CAGR']:.2%}"],
             ['Authorized CAGR (150M)', f"{metrics['Authorized CAGR']:.2%}"],
             ['Standard MaxDD', f"{metrics['Standard MaxDD']:.2%}"],
-            ['Fixed Base MaxDD', f"{metrics['Fixed Base MaxDD']:.2%}"],
-            ['Trading Calmar', f"{metrics['Trading Calmar']:.2f}"]
+            ['Fixed Base MaxDD (150M)', f"{metrics['Fixed Base MaxDD']:.2%}"],
+            ['Trading Calmar', f"{metrics['Trading Calmar']:.2f}"],
+            ['', ''],
+            ['年度績效 (實戰模式)', '年度報酬率', '年度損益 (TWD)', '年度MDD (150M基準)']
         ]
-        summary_data.append(['', ''])
-        summary_data.append(['年度', '年度報酬率', '年度損益'])
+
+        # Calculate Yearly MDD (150M base)
+        equity_df['Year'] = equity_df['日期'].dt.year
+        yearly_groups = equity_df.groupby('Year')
+
         for year, row in metrics['Yearly Performance'].iterrows():
-            summary_data.append([year, f"{row['年度報酬率']:.2%}", f"{row['年度損益']:,.0f}"])
+            # Get MDD for this specific year from fixed base column
+            year_mdd_fixed = equity_df[equity_df['Year'] == year]['固定基準回撤'].min()
+            summary_data.append([year, f"{row['年度報酬率']:.2%}", f"{row['年度損益']:,.0f}", f"{year_mdd_fixed:.2%}"])
 
         summary_df = pd.DataFrame(summary_data)
         summary_df.to_excel(writer, sheet_name='Summary', index=False, header=False)
 
-def run_analysis():
+def run_analysis_adj4():
     prices, volumes, code_to_name = clean_data('樣本集-1.xlsx')
     bt = BacktesterVol(prices, volumes, code_to_name)
 
-    scenarios = {
-        'Baseline': {
-            'sma_period': 303, 'roc_period': 14, 'stop_loss_type': 'fixed', 'stop_loss_val': 0.0999, 'use_market_filter': False, 'use_breadth_weight': False
-        },
-        'Scenario A': {
-            'sma_period': 303, 'roc_period': 14, 'stop_loss_type': 'fixed', 'stop_loss_val': 0.10, 'use_market_filter': True, 'use_breadth_weight': False
-        },
-        'Scenario B': {
-            'sma_period': 303, 'roc_period': 14, 'stop_loss_type': 'vol', 'vol_multiplier': 2.7, 'use_market_filter': False, 'use_breadth_weight': False
-        },
-        'Scenario C': {
-            'sma_period': 303, 'roc_period': 14, 'stop_loss_type': 'vol', 'vol_multiplier': 2.7, 'use_market_filter': True, 'use_breadth_weight': True
-        }
+    params_c = {
+        'sma_period': 303, 'roc_period': 14,
+        'stop_loss_type': 'vol', 'vol_multiplier': 2.7,
+        'use_market_filter': True, 'breadth_window': 290, 'use_breadth_weight': True
     }
 
-    costs = {
-        'Standard': {'sl_slippage': 0.0, 'filter_slippage': 0.0},
-        'Conservative': {'sl_slippage': 0.003, 'filter_slippage': 0.0},
-        'Extreme': {'sl_slippage': 0.0, 'filter_slippage': 0.005}
-    }
+    # Run Full Period for Excel
+    print("Generating full period deliverables...")
+    eq, t, t2, d = bt.run(**params_c)
+    metrics = calculate_metrics_dual(eq, 30000000, 150000000)
+    export_to_excel_final(eq, t, t2, d, metrics, 'equityV-adj4.xlsx')
 
-    results = {}
-    for s_name, s_params in scenarios.items():
-        results[s_name] = {}
-        for c_name, c_params in costs.items():
-            print(f"Running {s_name} under {c_name} cost...")
-            equity_curve, trades, trades2, daily = bt.run(**s_params, **c_params)
-            metrics = calculate_metrics_dual(equity_curve, 30000000, 150000000)
+    # Gather other metrics for MD report (optional: could just use values from discussion)
+    # But let's verify IS/OOS
+    res_is = bt.run(**params_c, start_date='2019-01-01', end_date='2023-12-31')
+    m_is = calculate_metrics_dual(res_is[0], 30000000, 150000000)
 
-            results[s_name][c_name] = {
-                'CAGR': metrics['Trading CAGR'], 'MaxDD': metrics['Standard MaxDD'], 'Calmar': metrics['Trading Calmar'],
-                'Return2022': metrics['Yearly Performance'].loc[2022, '年度報酬率'] if 2022 in metrics['Yearly Performance'].index else 0.0
-            }
+    res_oos = bt.run(**params_c, start_date='2024-01-01', end_date='2025-12-31')
+    m_oos = calculate_metrics_dual(res_oos[0], 30000000, 150000000)
 
-            if s_name == 'Scenario C' and c_name == 'Standard':
-                export_to_excel(equity_curve, trades, trades2, daily, metrics, 'equityV-adj4.xlsx')
+    print(f"IS CAGR: {m_is['Trading CAGR']:.2%}")
+    print(f"OOS CAGR: {m_oos['Trading CAGR']:.2%}")
 
-    with open('analysis_results_adj4.json', 'w') as f:
-        json.dump(results, f, indent=4)
+    print("Adj4 deliverables generation complete.")
 
 if __name__ == "__main__":
-    run_analysis()
+    run_analysis_adj4()
