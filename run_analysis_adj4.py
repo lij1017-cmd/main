@@ -1,7 +1,7 @@
 
 import pandas as pd
 import numpy as np
-from backtest_adj3 import BacktesterVol, clean_data, calculate_metrics_dual
+from backtest_adj4 import BacktesterVol, clean_data, calculate_metrics_dual
 import json
 import xlsxwriter
 
@@ -53,12 +53,24 @@ def run_analysis():
         'Extreme': {'sl_slippage': 0.0, 'filter_slippage': 0.005}
     }
 
+    results = {}
     for s_name, s_params in scenarios.items():
+        results[s_name] = {}
         for c_name, c_params in costs.items():
+            print(f"Running {s_name} under {c_name} cost...")
+            equity_curve, trades, trades2, daily = bt.run(**s_params, **c_params)
+            metrics = calculate_metrics_dual(equity_curve, 30000000, 150000000)
+
+            results[s_name][c_name] = {
+                'CAGR': metrics['Trading CAGR'], 'MaxDD': metrics['Standard MaxDD'], 'Calmar': metrics['Trading Calmar'],
+                'Return2022': metrics['Yearly Performance'].loc[2022, '年度報酬率'] if 2022 in metrics['Yearly Performance'].index else 0.0
+            }
+
             if s_name == 'Scenario C' and c_name == 'Standard':
-                equity_curve, trades, trades2, daily = bt.run(**s_params, **c_params)
-                metrics = calculate_metrics_dual(equity_curve, 30000000, 150000000)
-                export_to_excel(equity_curve, trades, trades2, daily, metrics, 'equityV-adj3.xlsx')
+                export_to_excel(equity_curve, trades, trades2, daily, metrics, 'equityV-adj4.xlsx')
+
+    with open('analysis_results_adj4.json', 'w') as f:
+        json.dump(results, f, indent=4)
 
 if __name__ == "__main__":
     run_analysis()

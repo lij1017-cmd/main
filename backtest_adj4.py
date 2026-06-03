@@ -45,6 +45,7 @@ class BacktesterVol:
         self.trading_capital = float(trading_capital)
         self.authorized_capital = float(authorized_capital)
 
+        # 交易成本
         self.commission_rate = 0.001425
         self.tax_rate = 0.003
 
@@ -55,15 +56,18 @@ class BacktesterVol:
             start_date=None, end_date=None, use_breadth_weight=True,
             sl_slippage=0.0, filter_slippage=0.0):
 
+        # 1. 指標預計算
         sma = self.prices_df.rolling(window=sma_period).mean().values
         roc = self.prices_df.pct_change(periods=roc_period).values
         sma5 = self.prices_df.rolling(window=5).mean().values
         sma10 = self.prices_df.rolling(window=10).mean().values
         sma20 = self.prices_df.rolling(window=20).mean().values
 
+        # Volatility 計算 (滾動標準差)
         returns = self.prices_df.pct_change()
         vol = returns.rolling(window=vol_period).std().values
 
+        # 市場寬度濾網
         breadth_sma_all = self.prices_df.rolling(window=breadth_window).mean().values
         breadth = np.mean(self.prices > breadth_sma_all, axis=1)
 
@@ -72,6 +76,7 @@ class BacktesterVol:
 
         mkt_filter = (breadth >= breadth_threshold) | (market_avg >= market_sma)
 
+        # 2. 確定區間索引
         if start_date:
             mask = self.dates >= pd.to_datetime(start_date)
             first_idx = np.where(mask)[0][0] if any(mask) else 0
@@ -84,9 +89,11 @@ class BacktesterVol:
         else:
             last_idx = len(self.dates)-1
 
+        # 考慮指標計算所需的緩衝期
         buffer = max(sma_period, roc_period, breadth_window, mkt_sma_window, vol_period + 1)
         loop_start = max(first_idx, buffer)
 
+        # 3. 帳戶與槽位初始化
         surplus_pool = float(self.trading_capital)
         slots = {0: None, 1: None, 2: None}
 
@@ -96,6 +103,8 @@ class BacktesterVol:
         daily_details = []
 
         peak_equity = float(self.trading_capital)
+
+        # 實戰交易模式：每年初損益歸零，持有部位延續
         start_of_year_equity = float(self.trading_capital)
         current_year = self.dates[loop_start].year
 
@@ -103,6 +112,7 @@ class BacktesterVol:
             date = self.dates[i]
             current_prices = self.prices[i]
 
+            # 年度重置檢查
             if date.year != current_year:
                 start_of_year_equity = total_equity if 'total_equity' in locals() else float(self.trading_capital)
                 current_year = date.year
@@ -121,20 +131,29 @@ class BacktesterVol:
             total_equity = surplus_pool + stock_mv
             if total_equity > peak_equity: peak_equity = total_equity
 
+            # 標準 MDD (相對於最高點)
             drawdown = (total_equity - peak_equity) / peak_equity if peak_equity != 0 else 0
+            # 固定基準 MDD (相對於初始授權資金 150M)
             drawdown_fixed = (total_equity - peak_equity) / self.authorized_capital
 
+            # 年度損益 (從年初 0 開始)
             yearly_pnl = total_equity - start_of_year_equity
             yearly_return = yearly_pnl / start_of_year_equity if start_of_year_equity != 0 else 0
 
             equity_curve_data.append({
-                '日期': date, '權益': total_equity, '回撤(Drawdown)': drawdown, '固定基準回撤': drawdown_fixed,
-                '市場寬度': breadth[i], '年度損益': yearly_pnl, '年度報酬率': yearly_return
+                '日期': date,
+                '權益': total_equity,
+                '回撤(Drawdown)': drawdown,
+                '固定基準回撤': drawdown_fixed,
+                '市場寬度': breadth[i],
+                '年度損益': yearly_pnl,
+                '年度報酬率': yearly_return
             })
 
             if i == last_idx: break
             next_prices = self.prices[i+1]
 
+            # 市場濾網全清倉
             if use_market_filter and not mkt_filter[i]:
                 for s_id, info in slots.items():
                     if info and 'asset_idx' in info:
@@ -163,6 +182,7 @@ class BacktesterVol:
                         slots[s_id] = None
                 continue
 
+            # 每日檢查停損
             for s_id, info in slots.items():
                 if info and 'asset_idx' in info:
                     a_idx = info['asset_idx']
@@ -210,6 +230,7 @@ class BacktesterVol:
                         })
                         slots[s_id] = None
 
+            # 再平衡
             if (i - loop_start) % rebalance_interval == 0:
                 top_3_signals = []
                 valid_roc = roc[i]
@@ -253,6 +274,7 @@ class BacktesterVol:
                             })
                             slots[s_id] = None
 
+                # 買進新標的
                 for s_id in slots:
                     if slots[s_id] is None and top_3_signals:
                         next_sig = None
