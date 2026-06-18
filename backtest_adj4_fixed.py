@@ -110,7 +110,9 @@ def clean_data(filepath):
 
 def apply_new_stocks_registry(prices, volumes, registry):
     """
-    根據新標的池註冊表，在生效日期之前排除對應標的（設為 NaN），生效日期起（含）才納入交易池。
+    根據新標的池註冊表處理新增標的。
+    在生效日期之前，將標的價格設為生效日當天之價格（使其動能 ROC=0）並將成交量設為 0，
+    以確保能計算 SMA 均線但不會在生效日之前觸發進場訊號。
     """
     prices_filtered = prices.copy()
     volumes_filtered = volumes.copy()
@@ -119,11 +121,14 @@ def apply_new_stocks_registry(prices, volumes, registry):
         eff_date = pd.to_datetime(date_str)
         # 找出生效日之前的日期遮罩
         pre_mask = prices_filtered.index < eff_date
-        if pre_mask.any():
+
+        # 找出有效資料中，大於或等於生效日的第一個日期（通常就是生效日）
+        post_eff_dates = prices_filtered.index[prices_filtered.index >= eff_date]
+
+        if pre_mask.any() and not post_eff_dates.empty:
+            first_eff_date = post_eff_dates[0]
+
             for stock in stocks:
-                # 【錯誤修正】: 原始代碼使用完整的標的名稱(如 "3481群創") 進行比對，
-                # 但 Excel 欄位名稱僅包含代碼 (如 "3481")。
-                # 修正後將先提取純數字代碼，並同時支援字串與數值型態的欄位標籤。
                 stock_code_str = "".join(filter(str.isdigit, str(stock)))
 
                 # 尋找匹配的欄位 (考慮字串或整數型態)
@@ -134,10 +139,12 @@ def apply_new_stocks_registry(prices, volumes, registry):
                     matched_col = int(stock_code_str)
 
                 if matched_col is not None:
-                    prices_filtered.loc[pre_mask, matched_col] = np.nan
-                    volumes_filtered.loc[pre_mask, matched_col] = np.nan
+                    # 將生效日之前的價格統一設為生效日當天的價格 (使其動能呈現 0，但可計算均線)
+                    eff_price = prices_filtered.loc[first_eff_date, matched_col]
+                    prices_filtered.loc[pre_mask, matched_col] = eff_price
+                    # 將生效日之前的成交量設為 0，確保不會符合進場金額門檻
+                    volumes_filtered.loc[pre_mask, matched_col] = 0.0
                 else:
-                    # 選項：若未找到標的，可記錄日誌或忽略
                     pass
 
     return prices_filtered, volumes_filtered
